@@ -1,0 +1,43 @@
+{
+  "system": "dnd5e",
+  "generatedAt": "2026-10-02T11:15:33.066Z",
+  "license": "CC-BY-4.0 (SRD 5.2 and SRD 5.1 by Wizards of the Coast LLC)",
+  "attribution": "This work includes material from the System Reference Document 5.2 (\"SRD 5.2\") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.\n\nThis work includes material taken from the System Reference Document 5.1 (\"SRD 5.1\") by Wizards of the Coast LLC, available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.\n\nSpells, conditions, monsters, equipment, magic items and weapon properties are SRD 5.2; rules sections are SRD 5.1. Data was converted from the 5e-bits/5e-database project (https://github.com/5e-bits/5e-database). Short action summaries were condensed from the SRD 5.2 text.\n\nDungeons & Dragons is a trademark of Wizards of the Coast LLC. Minion is not affiliated with or endorsed by Wizards of the Coast.",
+  "categories": [
+    {
+      "category": "spell",
+      "file": "spell.json",
+      "count": 339
+    },
+    {
+      "category": "condition",
+      "file": "condition.json",
+      "count": 15
+    },
+    {
+      "category": "creature",
+      "file": "creature.json",
+      "count": 341
+    },
+    {
+      "category": "action",
+      "file": "action.json",
+      "count": 13
+    },
+    {
+      "category": "item",
+      "file": "item.json",
+      "count": 425
+    },
+    {
+      "category": "rule",
+      "file": "rule.json",
+      "count": 33
+    },
+    {
+      "category": "trait",
+      "file": "trait.json",
+      "count": 18
+    }
+  ]
+}

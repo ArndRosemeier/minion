@@ -1,0 +1,281 @@
+import { db } from '@/db/db'
+import { newId } from '@/lib/id'
+import { getSettings } from '@/state/settings'
+import { chat, type ORMessage } from './openrouter'
+import { ADVISOR_TOOL, executeTool, TOOLS } from './tools'
+import { campaignKnowledge, ENTITY_FIELDS_DOC, LINK_RULES, languageRule, STATBLOCK_SCHEMA } from './prompts'
+import type { Advisor, ChatMessage } from '@/types'
+import { SYSTEM_LABEL } from '@/types'
+
+export const AGENT_GUIDE = `You are Minion, the co-author and assistant of a game master. You have FULL read/write access to the campaign through tools: you can create, change and delete every entry, the party, campaign settings and battle maps, and look up the official rules.
+
+How to work:
+- When the GM asks for something, do it with the tools — don't just describe what you would do. For large or ambiguous creative choices, briefly propose options first unless the GM asked you to just do it.
+- After changes, reply with a short summary of what you created/changed (use [[links]] to the entries). The GM can undo every change.
+- Read an entry (read_entities) before editing it if its full content isn't in context. Use edit_text for small changes in long texts.
+- Prefer official creatures/spells/items (search_rules) over homebrew; create homebrew entries (with full mechanics) when nothing fits or the GM asks.
+
+What makes content great at the table:
+- Chapters ("chapter") hold the playable story flow in order: situation, what the players see (read-aloud "> " boxes), what happens, choices and consequences, links to scenes, NPCs, locations, encounters, handouts. Scenes ("scene") are concrete events within a chapter (parent = chapter).
+- NPCs: look, voice/mannerism, motivation, what they know, secrets; stats only if they may fight.
+- Locations: sensory description, notable features, inhabitants, hooks; sub-locations via parent.
+- Encounters: creatures appropriate to party level (encounter.creatures with exact official names or homebrew creature entries), tactics, terrain, what happens on win/lose; a battle map description.
+- Every rules reference (spell, condition, action, creature, item, trait) is a [[wikilink]] so the GM can tap it. The GM must never need another book.
+- Keep summaries short (one line). Use Markdown headings, lists and bold for scannability on a tablet.`
+
+export function buildSystemPrompt(campaignKnowledgeText: string, campaign: Parameters<typeof languageRule>[0]) {
+  return [
+    AGENT_GUIDE,
+    `Game system: ${SYSTEM_LABEL[campaign.system]}.`,
+    languageRule(campaign),
+    LINK_RULES,
+    ENTITY_FIELDS_DOC,
+    STATBLOCK_SCHEMA,
+    `=== CURRENT CAMPAIGN STATE ===\n${campaignKnowledgeText}`,
+  ].join('\n\n')
+}
+
+async function loadKnowledge(campaignId: string) {
+  const [campaign, entities, maps] = await Promise.all([
+    db.campaigns.get(campaignId),
+    db.entities.where('campaignId').equals(campaignId).toArray(),
+    db.maps.where('campaignId').equals(campaignId).toArray(),
+  ])
+  if (!campaign) throw new Error('Campaign not found')
+  const k = campaignKnowledge(campaign, entities, maps, getSettings().contextMode)
+  return { campaign, entities, maps, knowledge: k.text }
+}
+
+/** Convert stored chat history to OpenRouter messages (older tool outputs truncated). */
+export function historyToMessages(history: ChatMessage[]): ORMessage[] {
+  const out: ORMessage[] = []
+  const lastUserIdx = history.map((m) => m.role).lastIndexOf('user')
+  history.forEach((m, i) => {
+    const old = i < lastUserIdx
+    if (m.role === 'user') out.push({ role: 'user', content: m.content })
+    else if (m.role === 'advisor') {
+      if (!m.viaTool && m.content) out.push({ role: 'user', content: `[Advisor “${m.advisor}” says:]\n${m.content}` })
+    } else if (m.role === 'assistant') {
+      if (!m.content && !m.toolCalls?.length) return
+      out.push({
+        role: 'assistant',
+        content: m.content || null,
+        tool_calls: m.toolCalls?.length ? m.toolCalls.map((t) => ({ id: t.id, type: 'function', function: { name: t.name, arguments: t.arguments } })) : undefined,
+      })
+    } else if (m.role === 'tool') {
+      const c = old && m.content.length > 400 ? m.content.slice(0, 400) + '… (truncated)' : m.content
+      out.push({ role: 'tool', tool_call_id: m.toolCallId, content: c })
+    }
+  })
+  // drop dangling tool calls (e.g. aborted turns) — providers reject them
+  const answered = new Set(out.filter((m) => m.role === 'tool').map((m) => m.tool_call_id))
+  return out
+    .map((m) => (m.role === 'assistant' && m.tool_calls ? { ...m, tool_calls: m.tool_calls.filter((t) => answered.has(t.id)) } : m))
+    .map((m) => (m.role === 'assistant' && m.tool_calls && !m.tool_calls.length ? { ...m, tool_calls: undefined, content: m.content || '…' } : m))
+}
+
+export interface AgentCallbacks {
+  onStream?: (text: string) => void
+  onProgress?: (text: string) => void
+  onMessage?: (m: ChatMessage) => void
+}
+
+const MAX_STEPS = 40
+
+/**
+ * Run one agent turn: the user message is already stored. Loops tool calls until the model answers.
+ * Returns the change batch id used for this turn.
+ */
+export async function runAgentTurn(
+  campaignId: string,
+  threadId: string,
+  cb: AgentCallbacks = {},
+  signal?: AbortSignal,
+  opts: { batchId?: string; extraSystem?: string; model?: string } = {},
+): Promise<string> {
+  const settings = getSettings()
+  const batchId = opts.batchId ?? newId('b')
+  const ctx = { batchId, source: 'ai' as const }
+  const tools = [...TOOLS, ...(settings.advisors.some((a) => a.enabled) ? [ADVISOR_TOOL] : [])]
+
+  for (let step = 0; step < MAX_STEPS; step++) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const { campaign, knowledge } = await loadKnowledge(campaignId)
+    const history = await db.messages.where('threadId').equals(threadId).sortBy('createdAt')
+    const messages: ORMessage[] = [
+      { role: 'system', content: buildSystemPrompt(knowledge, campaign) + (opts.extraSystem ? `\n\n${opts.extraSystem}` : '') },
+      ...historyToMessages(history),
+    ]
+    const model = opts.model || settings.chatModel
+    const res = await chat({ model, messages, tools, signal, onDelta: cb.onStream, temperature: 0.7 })
+    const msg: ChatMessage = {
+      id: newId('m'),
+      campaignId,
+      threadId,
+      role: 'assistant',
+      content: res.content,
+      model,
+      toolCalls: res.toolCalls.length ? res.toolCalls : undefined,
+      changeBatch: batchId,
+      cost: res.cost,
+      createdAt: Date.now(),
+    }
+    await db.messages.add(msg)
+    cb.onMessage?.(msg)
+    cb.onStream?.('')
+    if (!res.toolCalls.length) break
+
+    for (const call of res.toolCalls) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+      cb.onProgress?.(toolLabel(call.name, call.arguments))
+      let result: string
+      try {
+        result = await executeTool(call.name, call.arguments, {
+          campaignId,
+          ctx,
+          signal,
+          onProgress: cb.onProgress,
+          consultAdvisors: async (q) => {
+            const answers = await consultAdvisors(campaignId, threadId, q, signal, undefined, true)
+            return answers.map((a) => `${a.advisor}: ${a.content}`).join('\n\n')
+          },
+        })
+      } catch (e: any) {
+        if (e?.name === 'AbortError') throw e
+        result = JSON.stringify({ error: e?.message ?? String(e) })
+      }
+      const toolMsg: ChatMessage = {
+        id: newId('m'),
+        campaignId,
+        threadId,
+        role: 'tool',
+        content: result,
+        toolCallId: call.id,
+        createdAt: Date.now(),
+      }
+      await db.messages.add(toolMsg)
+    }
+    await db.threads.update(threadId, { updatedAt: Date.now() })
+  }
+  return batchId
+}
+
+export function toolLabel(name: string, args: string): string {
+  let a: any = {}
+  try {
+    a = JSON.parse(args)
+  } catch {
+    /* partial */
+  }
+  switch (name) {
+    case 'read_entities':
+      return `Reading ${a.ids?.length ?? ''} entr${a.ids?.length === 1 ? 'y' : 'ies'}`
+    case 'search_campaign':
+      return `Searching campaign for “${a.query ?? ''}”`
+    case 'create_entities':
+      return `Creating ${(a.entities ?? []).map((e: any) => e.name).slice(0, 4).join(', ')}${(a.entities?.length ?? 0) > 4 ? '…' : ''}`
+    case 'update_entity':
+    case 'edit_text':
+      return `Editing ${a.id ?? ''}`
+    case 'delete_entities':
+      return `Deleting ${(a.ids ?? []).join(', ')}`
+    case 'update_campaign':
+      return 'Updating campaign settings'
+    case 'set_party':
+      return 'Updating the party'
+    case 'search_rules':
+      return `Looking up rules: ${a.query ?? ''}${a.category ? ` (${a.category})` : ''}`
+    case 'read_rule':
+      return `Reading rule: ${a.name ?? ''}`
+    case 'illustrate':
+      return `Illustrating ${a.id ?? ''}`
+    case 'create_battlemap':
+      return `Creating battle map “${a.name ?? ''}”`
+    case 'update_battlemap':
+      return `Updating battle map`
+    case 'consult_advisors':
+      return 'Consulting advisors'
+  }
+  return name
+}
+
+// ---------------------------------------------------------------------------
+// Advisors
+// ---------------------------------------------------------------------------
+
+export async function consultAdvisors(
+  campaignId: string,
+  threadId: string,
+  question: string | undefined,
+  signal?: AbortSignal,
+  advisors?: Advisor[],
+  viaTool = false,
+): Promise<ChatMessage[]> {
+  const settings = getSettings()
+  const list = (advisors ?? settings.advisors).filter((a) => a.enabled)
+  if (!list.length) return []
+  const { campaign, knowledge } = await loadKnowledge(campaignId)
+  const history = await db.messages.where('threadId').equals(threadId).sortBy('createdAt')
+  const convo = history
+    .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content) || m.role === 'advisor')
+    .slice(-12)
+    .map((m) => `${m.role === 'user' ? 'GM' : m.role === 'advisor' ? `Advisor ${m.advisor}` : 'Assistant'}: ${m.content}`)
+    .join('\n\n')
+
+  const results = await Promise.all(
+    list.map(async (a) => {
+      try {
+        const r = await chat({
+          model: a.model || settings.fastModel,
+          signal,
+          temperature: 0.7,
+          messages: [
+            {
+              role: 'system',
+              content: [
+                `You are “${a.name}”, an advisor on a game master's advisory panel. ${a.persona}`,
+                `You cannot change the campaign yourself — give advice. Be concise (max ~180 words), concrete and actionable. Use bullet points. Reference entries with [[Name]]. Disagree when warranted.`,
+                languageRule(campaign),
+                `=== CAMPAIGN ===\n${knowledge}`,
+              ].join('\n\n'),
+            },
+            {
+              role: 'user',
+              content: `Recent conversation:\n${convo || '(none)'}\n\n${question ? `Question for the panel: ${question}` : 'Give your opinion on the current state/plan.'}`,
+            },
+          ],
+        })
+        const m: ChatMessage = {
+          id: newId('m'),
+          campaignId,
+          threadId,
+          role: 'advisor',
+          viaTool,
+          advisor: `${a.emoji} ${a.name}`,
+          model: a.model || settings.fastModel,
+          content: r.content,
+          cost: r.cost,
+          createdAt: Date.now(),
+        }
+        await db.messages.add(m)
+        return m
+      } catch (e: any) {
+        if (e?.name === 'AbortError') throw e
+        const m: ChatMessage = {
+          id: newId('m'),
+          campaignId,
+          threadId,
+          role: 'advisor',
+          viaTool,
+          advisor: `${a.emoji} ${a.name}`,
+          content: '',
+          error: e?.message ?? String(e),
+          createdAt: Date.now(),
+        }
+        await db.messages.add(m)
+        return m
+      }
+    }),
+  )
+  return results
+}

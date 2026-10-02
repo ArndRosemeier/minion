@@ -1,0 +1,214 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource/cinzel/500.css';
+@import '@fontsource/cinzel/700.css';
+
+@theme {
+  --font-sans: 'Inter Variable', system-ui, sans-serif;
+  --font-display: 'Cinzel', Georgia, serif;
+
+  --color-bg: #14110f;
+  --color-surface: #1c1815;
+  --color-surface-2: #25201c;
+  --color-surface-3: #2f2924;
+  --color-line: #3a322b;
+  --color-line-strong: #4d4339;
+  --color-ink: #efe8de;
+  --color-muted: #a99d8f;
+  --color-faint: #766b60;
+  --color-accent: #e0a54b;
+  --color-accent-strong: #f0b862;
+  --color-accent-ink: #1a1308;
+  --color-danger: #e0604b;
+  --color-success: #6fbf73;
+  --color-info: #6aa8d8;
+
+  /* entity type colors */
+  --color-t-npc: #e7a86b;
+  --color-t-location: #74b49b;
+  --color-t-scene: #c79be0;
+  --color-t-chapter: #d9c08a;
+  --color-t-creature: #e07a6a;
+  --color-t-faction: #c2a46b;
+  --color-t-item: #6fc3d6;
+  --color-t-spell: #9a9cf0;
+  --color-t-encounter: #e0604b;
+  --color-t-handout: #b8b0a3;
+  --color-t-rule: #a7c96b;
+  --color-t-note: #9b958d;
+  --color-t-condition: #f08fb0;
+  --color-t-action: #8fd0a6;
+  --color-t-trait: #b9a7d9;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+input,
+textarea,
+select {
+  font-size: 16px; /* prevents iOS zoom-on-focus */
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+@layer components {
+/* ---------- prose (markdown) ---------- */
+.prose-m {
+  line-height: 1.65;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.prose-m > * + * {
+  margin-top: 0.7em;
+}
+.prose-m h1,
+.prose-m h2,
+.prose-m h3,
+.prose-m h4 {
+  font-family: var(--font-display);
+  color: var(--color-accent-strong);
+  line-height: 1.25;
+  margin-top: 1.2em;
+}
+.prose-m h1 { font-size: 1.6rem; }
+.prose-m h2 { font-size: 1.3rem; }
+.prose-m h3 { font-size: 1.1rem; }
+.prose-m h4 { font-size: 1rem; }
+.prose-m ul { list-style: disc; padding-left: 1.3em; }
+.prose-m ol { list-style: decimal; padding-left: 1.4em; }
+.prose-m li + li { margin-top: 0.25em; }
+.prose-m strong { color: #fff4e4; }
+.prose-m hr { border-color: var(--color-line); margin: 1.2em 0; }
+.prose-m a:not(.chip) { color: var(--color-accent); text-decoration: underline; }
+.prose-m code {
+  background: var(--color-surface-3);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+/* read-aloud boxes */
+.prose-m blockquote {
+  position: relative;
+  background: linear-gradient(180deg, #2c241b, #251f19);
+  border: 1px solid #5a4630;
+  border-left: 4px solid var(--color-accent);
+  border-radius: 10px;
+  padding: 0.8em 1em 0.8em 1.1em;
+  font-style: italic;
+  color: #f3e3c8;
+}
+.prose-m table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.prose-m th,
+.prose-m td {
+  border: 1px solid var(--color-line);
+  padding: 0.35em 0.55em;
+  text-align: left;
+  vertical-align: top;
+}
+.prose-m th {
+  background: var(--color-surface-2);
+}
+
+/* ---------- chips ---------- */
+.chip {
+  --c: var(--color-accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0 0.45em;
+  margin: 0 0.05em;
+  border-radius: 6px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--c) 85%, white);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 35%, transparent);
+  font-style: normal;
+  font-weight: 550;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s;
+  vertical-align: baseline;
+}
+.chip:hover,
+.chip:active {
+  background: color-mix(in srgb, var(--c) 30%, transparent);
+}
+.chip svg {
+  width: 0.85em;
+  height: 0.85em;
+  flex: none;
+  opacity: 0.9;
+}
+.chip-unresolved {
+  --c: var(--color-faint);
+  border-style: dashed;
+}
+
+}
+
+/* PF2e action glyphs */
+.action-glyph {
+  display: inline-flex;
+  gap: 1px;
+  vertical-align: -0.1em;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-in-right {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes pop {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.anim-fade { animation: fade-in 0.15s ease-out; }
+.anim-slide { animation: slide-in-right 0.18s ease-out; }
+.anim-pop { animation: pop 0.15s ease-out; }
+
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* dice canvas */
+#dice-box canvas {
+  width: 100%;
+  height: 100%;
+}

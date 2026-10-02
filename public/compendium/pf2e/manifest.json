@@ -1,0 +1,38 @@
+{
+  "system": "pf2e",
+  "generatedAt": "2026-10-02T11:15:32.155Z",
+  "license": "ORC License (Paizo remaster content); Open Game License v1.0a for any OGL-flagged content",
+  "attribution": "This product is licensed under the ORC License held in the Library of Congress at TX 9-307-067 and available online at various locations including www.paizo.com/orclicense, www.azoralaw.com/orclicense, www.gamingorc.org, and others. All warranties are disclaimed as set forth therein.\n\nAttribution: This product is based on the following Licensed Material: Pathfinder GM Core, Pathfinder Monster Core, Pathfinder Monster Core 2, Pathfinder Player Core, Pathfinder Player Core 2, © Paizo Inc., Authors: Paizo Inc. Trait descriptions are taken from the localization files of the Foundry VTT Pathfinder 2e system and are likewise Paizo Licensed Material.\n\nData was extracted from the Foundry VTT Pathfinder Second Edition system (https://github.com/foundryvtt/pf2e). Only entries whose publication license is ORC or OGL are included.\n\nPathfinder and Paizo are trademarks of Paizo Inc. Minion is not published, endorsed, or specifically approved by Paizo.",
+  "categories": [
+    {
+      "category": "spell",
+      "file": "spell.json",
+      "count": 660
+    },
+    {
+      "category": "condition",
+      "file": "condition.json",
+      "count": 43
+    },
+    {
+      "category": "creature",
+      "file": "creature.json",
+      "count": 937
+    },
+    {
+      "category": "action",
+      "file": "action.json",
+      "count": 166
+    },
+    {
+      "category": "item",
+      "file": "item.json",
+      "count": 1108
+    },
+    {
+      "category": "trait",
+      "file": "trait.json",
+      "count": 537
+    }
+  ]
+}
