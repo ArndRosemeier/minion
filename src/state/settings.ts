@@ -54,6 +54,8 @@ interface SettingsState {
   loaded: boolean
   load: () => Promise<void>
   update: (patch: Partial<AppSettings>) => Promise<void>
+  /** remember a model as recently used (most recent first) */
+  rememberModel: (kind: 'chat' | 'image', id: string) => Promise<void>
 }
 
 export const useSettings = create<SettingsState>((set, get) => ({
@@ -69,6 +71,22 @@ export const useSettings = create<SettingsState>((set, get) => ({
     set({ settings })
     await db.kv.put({ key: 'settings', value: settings })
   },
+  rememberModel: async (kind, id) => {
+    if (!id) return
+    const recent = recentModels(get().settings)
+    const list = [id, ...recent[kind].filter((x) => x !== id)].slice(0, 10)
+    await get().update({ recentModels: { ...recent, [kind]: list } })
+  },
 }))
+
+/** Recent models; seeded with the currently configured ones. */
+export function recentModels(s: AppSettings): { chat: string[]; image: string[] } {
+  const r = s.recentModels ?? { chat: [], image: [] }
+  const add = (list: string[], ids: string[]) => [...list, ...ids.filter((id) => id && !list.includes(id))]
+  return {
+    chat: add(r.chat, [s.chatModel, s.fastModel, ...s.advisors.map((a) => a.model ?? '')]),
+    image: add(r.image, [s.imageModel]),
+  }
+}
 
 export const getSettings = () => useSettings.getState().settings

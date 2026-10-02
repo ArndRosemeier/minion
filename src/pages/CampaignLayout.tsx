@@ -3,8 +3,10 @@ import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-rout
 import {
   BookMarked,
   BookOpen,
+  Brain,
   Dices,
   History,
+  Image as ImageIcon,
   Home,
   Library,
   MessageSquare,
@@ -14,6 +16,7 @@ import {
   Swords,
   Users,
   Wand2,
+  Zap,
 } from 'lucide-react'
 import { CampaignProvider, useCampaign } from '@/state/campaign'
 import { useBattle } from '@/state/battle'
@@ -24,6 +27,8 @@ import { Showcase } from '@/components/Showcase'
 import { DicePanel } from '@/components/DicePanel'
 import { QuickSearch, useQuickSearch } from '@/components/QuickSearch'
 import { Logo } from '@/components/Logo'
+import { ModelPicker, shortModelName, useModels } from '@/components/ModelPicker'
+import { useSettings } from '@/state/settings'
 import { cx } from '@/components/ui'
 import { Empty, Button } from '@/components/ui'
 
@@ -124,6 +129,7 @@ function Shell() {
             </div>
           ))}
         </div>
+        <QuickModels />
         <div className="space-y-1 border-t border-line p-2">
           <RailButton icon={Search} label="Search" onClick={() => openSearch(true)} />
           <RailButton icon={Dices} label="Dice" onClick={() => openDice()} />
@@ -150,5 +156,49 @@ function RailButton({ icon: Icon, label, onClick }: { icon: typeof Search; label
       <Icon className="size-5 lg:size-[18px]" />
       {label}
     </button>
+  )
+}
+
+/** Switch the main, fast and image model on the fly. */
+function QuickModels() {
+  const settings = useSettings((s) => s.settings)
+  const update = useSettings((s) => s.update)
+  const { models } = useModels()
+  const slots = [
+    { key: 'chatModel', kind: 'chat', label: 'Main', title: 'Main model (chat & authoring)', icon: Brain },
+    { key: 'fastModel', kind: 'chat', label: 'Fast', title: 'Fast model (prompts, quick NPCs, advisors)', icon: Zap },
+    { key: 'imageModel', kind: 'image', label: 'Image', title: 'Image model (illustrations & maps)', icon: ImageIcon },
+  ] as const
+  return (
+    <div className="space-y-0.5 border-t border-line p-2">
+      <div className="hidden px-2 pb-1 text-[10px] font-bold tracking-widest text-faint uppercase lg:block">Models</div>
+      {slots.map((s) => {
+        const value = settings[s.key]
+        const name = shortModelName(value, models)
+        return (
+          <ModelPicker
+            key={s.key}
+            kind={s.kind}
+            value={value}
+            title={s.title}
+            onChange={(id) => update({ [s.key]: id })}
+            trigger={(open) => (
+              <button
+                onClick={open}
+                title={`${s.title}: ${value}`}
+                className="flex w-full flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-muted hover:bg-surface-3 hover:text-ink lg:flex-row lg:gap-3 lg:px-3 lg:text-sm"
+              >
+                <s.icon className="size-5 shrink-0 lg:size-[18px]" />
+                <span className="lg:hidden">{s.label}</span>
+                <span className="hidden min-w-0 flex-1 text-left lg:block">
+                  <span className="block text-[10px] leading-tight text-faint">{s.label}</span>
+                  <span className="block truncate text-xs leading-tight text-ink">{name}</span>
+                </span>
+              </button>
+            )}
+          />
+        )
+      })}
+    </div>
   )
 }

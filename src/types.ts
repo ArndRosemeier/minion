@@ -414,4 +414,6 @@ export interface AppSettings {
   diceColor: string
   /** 'full' = send everything when small enough, 'index' = index + lookups */
   contextMode: 'auto' | 'full' | 'index'
+  /** recently used models, most recent first */
+  recentModels?: { chat: string[]; image: string[] }
 }
