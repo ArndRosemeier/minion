@@ -10,6 +10,7 @@ import { AssetImage } from '@/components/AssetImage'
 import { QuickNpcModal } from '@/components/QuickNpc'
 import { ENTITY_TYPES } from '@/lib/entityTypes'
 import { extractLinks, resolveLink } from '@/lib/links'
+import { levelFor } from '@/lib/levels'
 import { Button, Empty, IconButton, Input, cx } from '@/components/ui'
 import type { Entity, RefEntry } from '@/types'
 
@@ -142,6 +143,7 @@ function TocItem({ e, active, onClick, label, indent, strong }: { e: Entity; act
 }
 
 function Reader({ e, scenes, onOpen }: { e: Entity; scenes: Entity[]; onOpen: (e: Entity) => void }) {
+  const { entities, campaign } = useCampaign()
   const show = useUI((s) => s.show)
   const openEditor = useEditor((s) => s.open)
   const meta = ENTITY_TYPES[e.type]
@@ -158,6 +160,7 @@ function Reader({ e, scenes, onOpen }: { e: Entity; scenes: Entity[]; onOpen: (e
       <header className="space-y-1">
         <div className="flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase" style={{ color: meta.color }}>
           <meta.icon className="size-3.5" /> {meta.label}
+          <span className="ml-1 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-muted normal-case">Party level {levelFor(e, entities, campaign)}</span>
         </div>
         <div className="flex items-start gap-2">
           <h1 className="flex-1 font-display text-3xl leading-tight">{e.name}</h1>

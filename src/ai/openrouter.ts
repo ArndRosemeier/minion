@@ -1,5 +1,11 @@
 import { getSettings } from '@/state/settings'
 import { activity } from '@/state/activity'
+import { Limiter } from './limiter'
+
+const parallel = () => Math.max(1, Math.min(12, getSettings().parallelRequests ?? 4))
+/** separate lanes so bulk image work never starves text calls (and vice versa) */
+const textLane = new Limiter(parallel)
+const imageLane = new Limiter(parallel)
 
 const BASE = 'https://openrouter.ai/api/v1'
 
@@ -103,7 +109,21 @@ export interface ChatOptions {
 
 /** Streaming chat completion with tool-call support; reported to the AI activity overlay. */
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
-  const id = activity.start({ label: opts.label ?? 'AI', model: opts.model, kind: 'text', source: opts.source })
+  // the interactive campaign chat bypasses the limit so it never waits behind bulk work
+  const lane = opts.source === 'chat' ? null : textLane
+  const id = activity.start({ label: opts.label ?? 'AI', model: opts.model, kind: 'text', source: opts.source, queued: !!lane })
+  try {
+    if (lane) await lane.acquire()
+  } catch (e) {
+    activity.finish(id, 'stopped')
+    throw e
+  }
+  if (opts.signal?.aborted) {
+    lane?.release()
+    activity.finish(id, 'stopped')
+    throw new DOMException('Aborted', 'AbortError')
+  }
+  if (lane) activity.running(id)
   try {
     const r = await chatStream({
       ...opts,
@@ -121,6 +141,8 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   } catch (e: any) {
     activity.finish(id, e?.name === 'AbortError' ? 'stopped' : (e?.message ?? String(e)))
     throw e
+  } finally {
+    lane?.release()
   }
 }
 
@@ -231,7 +253,14 @@ export interface ImageOptions {
 /** Generate an image through an OpenRouter image-capable chat model. Returns data URLs. */
 export async function generateImage(opts: ImageOptions): Promise<{ images: string[]; text: string; cost?: number }> {
   const model = opts.model || getSettings().imageModel
-  const act = activity.start({ label: opts.label ?? 'Painting', model, kind: 'image', content: opts.prompt })
+  const act = activity.start({ label: opts.label ?? 'Painting', model, kind: 'image', content: opts.prompt, queued: true })
+  await imageLane.acquire()
+  if (opts.signal?.aborted) {
+    imageLane.release()
+    activity.finish(act, 'stopped')
+    throw new DOMException('Aborted', 'AbortError')
+  }
+  activity.running(act)
   try {
     const r = await generateImageInner({ ...opts, model })
     activity.finish(act)
@@ -239,6 +268,8 @@ export async function generateImage(opts: ImageOptions): Promise<{ images: strin
   } catch (e: any) {
     activity.finish(act, e?.message ?? String(e))
     throw e
+  } finally {
+    imageLane.release()
   }
 }
 

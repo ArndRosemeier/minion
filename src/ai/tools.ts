@@ -254,6 +254,7 @@ TOOLS.push({
           description: 'which parts to generate; default: all parts that apply to the type',
         },
         size: { type: 'string', enum: ['small', 'medium', 'large'], description: 'dungeon size' },
+        level: { type: 'number', description: 'party level where this is played (default: inherited from its chapter/parent)' },
         parent: { type: 'string', description: 'id or name of the parent entry (e.g. the location of an encounter)' },
       },
       required: ['type'],
@@ -521,7 +522,7 @@ export async function executeTool(name: string, argsJson: string, env: ToolEnv):
         campaign,
         { type, id: target?.id, draft: { name: args.name ?? target?.name, summary: args.summary ?? target?.summary, parentId: parent?.id ?? target?.parentId } },
         new Set(wanted),
-        { instructions: args.instructions, size: args.size },
+        { instructions: args.instructions, size: args.size, level: typeof args.level === 'number' ? args.level : undefined },
         (step, patch) => {
           if (patch.detail) env.onProgress?.(`${step}: ${patch.detail}`)
           if (patch.status === 'done' || patch.status === 'error') log.push(`${step}: ${patch.status}${patch.detail ? ' — ' + patch.detail : ''}`)

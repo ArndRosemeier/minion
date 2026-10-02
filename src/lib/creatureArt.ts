@@ -38,17 +38,17 @@ export function creaturesWithoutArt(campaign: Campaign, entities: Entity[], maps
 }
 
 /** Paint a portrait for one creature target (re-checks that it still has none). */
-export async function paintCreature(campaignId: string, target: ArtTarget, ctx?: ChangeCtx) {
+export async function paintCreature(campaignId: string, target: ArtTarget, ctx?: ChangeCtx, promptOverride?: string) {
   const campaign = await db.campaigns.get(campaignId)
   if (!campaign) return
   if (target.source === 'rules') {
     if (campaign.refImages?.[target.id]?.length) return
     await loadCompendium(campaign.system)
     const r = getRef(campaign.system, target.id)
-    if (r) await illustrateRef(campaign, r, undefined, ctx)
+    if (r) await illustrateRef(campaign, r, undefined, ctx, promptOverride)
   } else {
     const e = await db.entities.get(target.id)
-    if (e && !e.images.length) await illustrateEntity(campaign, e, undefined, ctx)
+    if (e && !e.images.length) await illustrateEntity(campaign, e, undefined, ctx, promptOverride)
   }
 }
 

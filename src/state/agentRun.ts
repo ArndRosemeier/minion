@@ -11,14 +11,18 @@ interface RunState {
   reasoning: string
   progress: string
   kind: 'agent' | 'advisors'
+  /** builder/fill runs (not the interactive chat) */
+  background?: boolean
   controller: AbortController
 }
 
 interface AgentRunStore {
   runs: Record<string, RunState>
-  send: (campaignId: string, threadId: string, text: string, opts?: { extraSystem?: string }) => Promise<string | null>
+  send: (campaignId: string, threadId: string, text: string, opts?: { extraSystem?: string; label?: string; background?: boolean }) => Promise<string | null>
   advise: (campaignId: string, threadId: string, question?: string, advisors?: Advisor[]) => Promise<void>
   stop: (threadId: string) => void
+  /** abort all background (builder / fill gaps) agent runs */
+  stopBackground: () => void
 }
 
 export const useAgentRun = create<AgentRunStore>((set, get) => {
@@ -36,7 +40,7 @@ export const useAgentRun = create<AgentRunStore>((set, get) => {
     send: async (campaignId, threadId, text, opts) => {
       if (get().runs[threadId]) return null
       const controller = new AbortController()
-      set((s) => ({ runs: { ...s.runs, [threadId]: { threadId, stream: '', reasoning: '', progress: 'Thinking…', kind: 'agent', controller } } }))
+      set((s) => ({ runs: { ...s.runs, [threadId]: { threadId, stream: '', reasoning: '', progress: 'Thinking…', kind: 'agent', background: opts?.background, controller } } }))
       try {
         if (text.trim()) {
           const m: ChatMessage = { id: newId('m'), campaignId, threadId, role: 'user', content: text, createdAt: Date.now() }
@@ -53,7 +57,7 @@ export const useAgentRun = create<AgentRunStore>((set, get) => {
             onProgress: (progress) => patch(threadId, { progress }),
           },
           controller.signal,
-          { extraSystem: opts?.extraSystem },
+          { extraSystem: opts?.extraSystem, label: opts?.label, background: opts?.background },
         )
         return batch
       } catch (e: any) {
@@ -82,5 +86,6 @@ export const useAgentRun = create<AgentRunStore>((set, get) => {
       }
     },
     stop: (threadId) => get().runs[threadId]?.controller.abort(),
+    stopBackground: () => Object.values(get().runs).forEach((r) => r.background && r.controller.abort()),
   }
 })

@@ -10,6 +10,7 @@ import { GeneratePanel } from './GeneratePanel'
 import { useUI, toast } from '@/state/ui'
 import { resolveCreature } from '@/lib/creatures'
 import { encounterDifficulty } from '@/lib/encounterMath'
+import { LEVELED_TYPES, levelFor } from '@/lib/levels'
 import { AssetImage } from './AssetImage'
 import { CreaturePicker } from './CreaturePicker'
 import { StatBlockEditor, blankStats } from './StatBlockEditor'
@@ -51,6 +52,8 @@ function EntityEditor({ target, onClose }: { target: { id?: string; draft?: Part
   const [generating, setGenerating] = useState(false)
   const set = (patch: Partial<Entity>) => setE((x) => ({ ...x, ...patch }))
   const type = (e.type ?? 'npc') as EntityType
+  // level inherited from parents / referencing chapter when not set on the entry itself
+  const inheritedLevel = useMemo(() => levelFor({ ...e, level: undefined }, entities, campaign), [e.parentId, e.name, entities, campaign])
 
   useEffect(() => {
     if (type === 'encounter' && !e.encounter) set({ encounter: { creatures: [] } })
@@ -168,6 +171,18 @@ function EntityEditor({ target, onClose }: { target: { id?: string; draft?: Part
                   </Select>
                 </Field>
               )}
+              {LEVELED_TYPES.includes(type) && (
+                <Field label="Party level here" hint={e.level === undefined ? `Inherited: ${inheritedLevel}` : 'Children inherit this level.'}>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={20}
+                    placeholder={String(inheritedLevel)}
+                    value={e.level ?? ''}
+                    onChange={(ev) => set({ level: ev.target.value === '' ? undefined : Number(ev.target.value) })}
+                  />
+                </Field>
+              )}
               {(type === 'chapter' || type === 'scene') && (
                 <Field label="Order">
                   <Input type="number" value={e.order ?? ''} onChange={(ev) => set({ order: Number(ev.target.value) })} />
@@ -215,6 +230,7 @@ function EntityEditor({ target, onClose }: { target: { id?: string; draft?: Part
 
         {tab === 'encounter' && e.encounter && (
           <EncounterEditor
+            level={e.level ?? inheritedLevel}
             value={e.encounter}
             onChange={(encounter) => set({ encounter })}
             mapsSelect={
@@ -264,7 +280,9 @@ function EncounterEditor({
   value,
   onChange,
   mapsSelect,
+  level,
 }: {
+  level: number
   value: NonNullable<Entity['encounter']>
   onChange: (v: NonNullable<Entity['encounter']>) => void
   mapsSelect: React.ReactNode
@@ -276,11 +294,11 @@ function EncounterEditor({
       encounterDifficulty(
         campaign.system,
         value.creatures.map((c) => ({ count: c.count, stats: resolveCreature(c.refId, c.name, index, campaign.system)?.stats })),
-        campaign.partyLevel,
+        level,
         campaign.partySize,
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [value.creatures, campaign, index, compendiumVersion],
+    [value.creatures, campaign, index, compendiumVersion, level],
   )
   const setCount = (i: number, d: number) =>
     onChange({
@@ -295,7 +313,7 @@ function EncounterEditor({
             Difficulty: <b className="text-accent">{diff.label}</b> <span className="text-muted">({diff.xp} XP)</span>
           </span>
           <span className="text-xs text-faint">
-            Party {campaign.partySize} × lvl {campaign.partyLevel}
+            Party {campaign.partySize} × lvl {level}
           </span>
         </div>
         <div className="mt-2 flex gap-1 text-[11px] text-faint">

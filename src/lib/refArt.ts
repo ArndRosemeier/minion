@@ -31,8 +31,8 @@ export function refSubject(r: RefEntry) {
 }
 
 /** Paint an illustration for a rules entry (stored on the campaign). */
-export async function illustrateRef(campaign: Campaign, r: RefEntry, direction?: string, ctx?: ChangeCtx): Promise<Asset> {
-  const asset = await generateIllustration(campaign, refSubject(r), { aspectRatio: r.category === 'creature' ? '3:4' : '1:1', direction })
+export async function illustrateRef(campaign: Campaign, r: RefEntry, direction?: string, ctx?: ChangeCtx, promptOverride?: string): Promise<Asset> {
+  const asset = await generateIllustration(campaign, refSubject(r), { aspectRatio: r.category === 'creature' ? '3:4' : '1:1', direction, promptOverride })
   await addRefImage(campaign.id, r.id, asset.id, ctx)
   return asset
 }

@@ -4,8 +4,9 @@ import { createMap, updateCampaign, updateEntity, updateMap, type ChangeCtx } fr
 import { newId } from '@/lib/id'
 import { extractLinks, resolveLink, EntityIndex } from '@/lib/links'
 import { loadCompendium } from '@/compendium/compendium'
-import { generateBattlemapImage, illustrateEntity } from '@/ai/generate'
+import { generateBattlemapImage, illustrateEntities } from '@/ai/generate'
 import { useAgentRun } from './agentRun'
+import { LEVEL_PLANNING } from '@/lib/levels'
 import { seedEncounterMap } from '@/lib/encounterSetup'
 import type { AutomationMode, Campaign, ChatThread, Entity } from '@/types'
 import { SYSTEM_LABEL } from '@/types'
@@ -40,20 +41,22 @@ export const STEPS: StepDef[] = [
 ]
 
 export function stepPrompt(step: string, c: Campaign, extra = ''): string {
+  // target level: explicit, or a sensible default for the scope
+  const toLevel = c.brief?.toLevel ?? Math.min(20, c.partyLevel + ({ oneshot: 0, short: 1, arc: 3, extend: 2 } as Record<string, number>)[c.brief?.scope ?? 'short'])
   const scope = SCOPES[c.brief?.scope ?? 'short'] ?? SCOPES.short
   const notes = c.brief?.notes ? `\nGM's wishes for this module: ${c.brief.notes}` : ''
-  const head = `[MODULE BUILDER — step “${step}”] We are building ${scope} for ${SYSTEM_LABEL[c.system]}, party of ${c.partySize} at level ${c.partyLevel}.${notes}\nWork autonomously with the tools; don't ask questions — make good decisions. When done, reply with a brief summary.`
+  const head = `[MODULE BUILDER — step “${step}”] We are building ${scope} for ${SYSTEM_LABEL[c.system]}, party of ${c.partySize} starting at level ${c.partyLevel}${toLevel > c.partyLevel ? ` and reaching about level ${toLevel} at the end` : ' (staying at this level)'}.${notes}\nWork autonomously with the tools; don't ask questions — make good decisions. When done, reply with a brief summary.\n\n${LEVEL_PLANNING(c, toLevel)}`
   const extend = c.brief?.scope === 'extend' ? '\nThis is an EXTENSION: keep everything that exists, continue the story consistently, and only add/adjust what the new part needs.' : ''
   const body: Record<string, string> = {
     premise:
       'Develop (or refine, if already present) the premise: central conflict, antagonist and their plan, stakes, setting region, themes, tone, a strong hook for the party. Update the campaign settings (update_campaign: premise, tone, artStyle, and name if it is still generic). Create one note "Campaign Overview" with the big picture, secrets and the overall arc (GM-only info in secrets).',
     outline:
-      'Create the chapters (type chapter, use order) and their scenes (type scene, parent = chapter name, use order). Chapter body: GM overview — situation, goals, how the party enters and leaves, key choices — then the scene flow with [[links]]. Scene body: a concise outline of what happens (details come later). Reference planned NPCs, locations and encounters by [[Name]] — they will be created in later steps. If the adventure has a dungeon or complex site (cave system, ruin, keep, ship, sewer…), create it as a "dungeon" entry with name, summary and concept in body — it is designed in full (rooms, encounters, maps) in a later step; don\'t create its rooms yourself.',
+      'First plan the level curve, then create the chapters (type chapter, use order, set "level" = party level while playing it) and their scenes (type scene, parent = chapter name, use order). Chapter body: GM overview — situation, goals, how the party enters and leaves, key choices — then the scene flow with [[links]]. Scene body: a concise outline of what happens (details come later). Reference planned NPCs, locations and encounters by [[Name]] — they will be created in later steps. If the adventure has a dungeon or complex site (cave system, ruin, keep, ship, sewer…), create it as a "dungeon" entry with name, summary and concept in body — it is designed in full (rooms, encounters, maps) in a later step; don\'t create its rooms yourself.',
     locations:
       'Create all locations the story references (check the outline for [[links]] that do not exist yet) plus other key places. Each: summary, evocative read-aloud description ("> "), notable features (with game-relevant details), inhabitants, secrets, hooks. Use parent for sub-locations (e.g. rooms/areas of a dungeon or building).',
     npcs:
       'Create all NPCs and factions the story references plus other useful ones. NPC body: appearance, voice/mannerism, personality, motivation, what they know, how they react to the party; secrets in "secrets". Give stat blocks to NPCs who might fight (official creature as base where sensible).',
-    encounters: `Create an encounter entity for every combat or hazard in the scenes. Balance for ${c.partySize} characters of level ${c.partyLevel} (vary difficulty; use the system's encounter-building rules). Use official creatures (search_rules to find exact names and levels) where they fit; otherwise create homebrew creature entities with complete stat blocks first. Include tactics, terrain/cover, morale, and what happens on victory/defeat. Link each encounter from its scene (edit the scene text).`,
+    encounters: `Create an encounter entity for every combat or hazard in the scenes. Set each encounter's "level" to the level of the chapter where it happens and balance it for ${c.partySize} characters of THAT level (vary difficulty; use the system's encounter-building rules; creature levels/CR relative to that level). Use official creatures (search_rules to find exact names and levels) where they fit; otherwise create homebrew creature entities with complete stat blocks first. Include tactics, terrain/cover, morale, and what happens on victory/defeat. Link each encounter from its scene (edit the scene text).`,
     links:
       'Some [[links]] in the campaign do not resolve to any entry or official rule. Create each missing entry now (homebrew with full mechanics where it is a rules element; or the NPC/location/item it refers to). If a link is just misspelled, fix the link text in the referencing entry instead.',
   }
@@ -112,6 +115,52 @@ async function findOrCreateBuilderThread(campaignId: string): Promise<string> {
 
 const IMAGE_TYPES: Entity['type'][] = ['npc', 'location', 'dungeon', 'chapter', 'creature', 'item', 'faction']
 
+const WRITE_CHAPTER = (ch: Entity) =>
+  `Write chapter “${ch.name}” (id ${ch.id}) and all its scenes out in full, playable detail: read-aloud boxes ("> "), what happens and why, NPC lines and reactions, skill checks with DCs (for the chapter's party level), clues, treasure by level (official items linked), level-ups where they happen, consequences and transitions to the next chapter. Keep the existing structure, expand and improve it. Link every rules element and entry with [[ ]]. Finish by adding the tag "written" to the chapter (update_entity tags).
+
+PARALLEL WRITING: other chapters are being written at the same time. Do NOT create new NPCs, locations, creatures, items, encounters or other entries in this step (they would be duplicated) — only edit this chapter and its scenes. Reference anything that is still missing with a [[Name]] link; missing entries are created automatically afterwards.`
+
+/**
+ * Write chapters in parallel: one background agent run per chapter in its own temporary thread
+ * (deleted on success). Missing entries referenced by the chapters are created once afterwards.
+ */
+export async function writeChaptersParallel(
+  c: Campaign,
+  chapterIds: string[],
+  onProgress: (msg: string) => void,
+  shouldStop: () => boolean,
+): Promise<{ batches: string[]; errors: string[] }> {
+  const batches: string[] = []
+  const errors: string[] = []
+  let n = 0
+  await Promise.all(
+    chapterIds.map(async (id) => {
+      if (shouldStop()) return
+      const ch = await db.entities.get(id)
+      if (!ch) return
+      const t: ChatThread = { id: newId('th'), campaignId: c.id, title: `Builder: ${ch.name}`, createdAt: Date.now(), updatedAt: Date.now() }
+      await db.threads.add(t)
+      const b = await useAgentRun.getState().send(c.id, t.id, stepPrompt('write', c, WRITE_CHAPTER(ch)), { background: true, label: `Writing chapter: ${ch.name}` })
+      if (b) {
+        batches.push(b)
+        await db.messages.where('threadId').equals(t.id).delete()
+        await db.threads.delete(t.id)
+      } else errors.push(ch.name)
+      onProgress(`${++n}/${chapterIds.length} chapters written`)
+    }),
+  )
+  // entries the chapters link to but that don't exist yet — created once, no duplicates
+  if (!shouldStop() && batches.length) {
+    const { createMissingLinks } = await import('@/ai/complete')
+    const scenes = (await db.entities.where({ campaignId: c.id, type: 'scene' }).toArray()).filter((s) => s.parentId && chapterIds.includes(s.parentId))
+    onProgress('Creating entries the chapters link to…')
+    const ctx = { batchId: newId('b'), source: 'ai' as const }
+    await createMissingLinks(c, [...chapterIds, ...scenes.map((s) => s.id)], ctx, onProgress)
+    batches.push(ctx.batchId)
+  }
+  return { batches, errors }
+}
+
 export async function pool<T>(items: T[], n: number, fn: (t: T) => Promise<void>, shouldStop: () => boolean) {
   let i = 0
   const worker = async () => {
@@ -136,7 +185,7 @@ export const useBuilder = create<BuilderStore>((set, get) => {
   const stopped = (cid: string) => !!get().runs[cid]?.stopRequested
 
   async function runAgentStep(cid: string, thread: string, prompt: string): Promise<string | null> {
-    const batch = await useAgentRun.getState().send(cid, thread, prompt)
+    const batch = await useAgentRun.getState().send(cid, thread, prompt, { background: true, label: 'Module Builder' })
     return batch
   }
 
@@ -170,20 +219,15 @@ export const useBuilder = create<BuilderStore>((set, get) => {
     if (step.id === 'write') {
       const chapters = (await db.entities.where({ campaignId: cid, type: 'chapter' }).toArray()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       const todo = fresh.brief?.scope === 'extend' ? chapters.filter((c) => !c.tags.includes('written')) : chapters
-      for (const [i, ch] of todo.entries()) {
-        if (stopped(cid)) return
-        patch(cid, { progress: `Writing chapter ${i + 1}/${todo.length}: ${ch.name}` })
-        const b = await runAgentStep(
-          cid,
-          thread,
-          stepPrompt(
-            'write',
-            fresh,
-            `Write chapter “${ch.name}” (id ${ch.id}) and all its scenes out in full, playable detail: read-aloud boxes ("> "), what happens and why, NPC lines and reactions, skill checks with DCs, clues, treasure (official items linked), consequences and transitions to the next scene. Keep the existing structure, expand and improve it. Link every rules element and entry with [[ ]]. Finish by adding the tag "written" to the chapter (update_entity tags).`,
-          ),
-        )
-        if (b) addBatch(cid, step.id, b)
-      }
+      patch(cid, { progress: `Writing ${todo.length} chapters in parallel…` })
+      const r = await writeChaptersParallel(
+        fresh,
+        todo.map((c) => c.id),
+        (msg) => patch(cid, { progress: msg }),
+        () => stopped(cid),
+      )
+      r.batches.forEach((b) => addBatch(cid, step.id, b))
+      if (r.errors.length) patch(cid, { error: `Chapters not written: ${r.errors.join(', ')}` })
       return
     }
     if (step.id === 'links') {
@@ -217,7 +261,7 @@ export const useBuilder = create<BuilderStore>((set, get) => {
       let n = 0
       await pool(
         todo,
-        2,
+        12,
         async (enc) => {
           patch(cid, { progress: `Painting battle map ${++n}/${todo.length}: ${enc.name}` })
           const loc = ents.find((l) => l.type === 'location' && (enc.body.includes(l.name) || enc.parentId === l.id))
@@ -240,41 +284,17 @@ export const useBuilder = create<BuilderStore>((set, get) => {
     if (step.id === 'art') {
       const ents = await db.entities.where('campaignId').equals(cid).toArray()
       const todo = ents.filter((e) => IMAGE_TYPES.includes(e.type) && !e.images.length && (e.type !== 'creature' || !e.tags.includes('official')))
-      let n = 0
-      await pool(
-        todo,
-        3,
-        async (e) => {
-          patch(cid, { progress: `Illustrating ${++n}/${todo.length}: ${e.name}` })
-          try {
-            const cur = await db.entities.get(e.id)
-            if (cur && !cur.images.length) await illustrateEntity(fresh, cur, undefined, ctx)
-          } catch (err: any) {
-            patch(cid, { error: `${e.name}: ${err.message}` })
-          }
-        },
-        () => stopped(cid),
-      )
-      // portraits for rules creatures used in encounters
-      {
-        const { creatureTargetsForEncounters, paintCreature } = await import('@/lib/creatureArt')
-        const encIds = ents.filter((e) => e.type === 'encounter').map((e) => e.id)
-        const targets = (await creatureTargetsForEncounters(cid, encIds)).filter((t) => t.source === 'rules')
-        let k = 0
-        await pool(
-          targets,
-          3,
-          async (t) => {
-            patch(cid, { progress: `Creature portrait ${++k}/${targets.length}: ${t.name}` })
-            try {
-              await paintCreature(cid, t, ctx)
-            } catch (err: any) {
-              patch(cid, { error: `${t.name}: ${err.message}` })
-            }
-          },
-          () => stopped(cid),
-        )
-      }
+      // entries and rules-creature portraits at the same time; batched prompts, request limiter caps concurrency
+      const { creatureTargetsForEncounters } = await import('@/lib/creatureArt')
+      const { paintAll } = await import('@/ai/complete')
+      const encIds = ents.filter((e) => e.type === 'encounter').map((e) => e.id)
+      const targets = (await creatureTargetsForEncounters(cid, encIds)).filter((t) => t.source === 'rules')
+      const errors = await Promise.all([
+        illustrateEntities(fresh, todo, ctx, (d, t, name) => patch(cid, { progress: `Illustrated ${d}/${t}: ${name}` })),
+        paintAll(cid, targets, ctx, (d) => patch(cid, { progress: `Creature portraits: ${d}` })).then(() => [] as string[]),
+      ])
+      const errs = errors.flat()
+      if (errs.length) patch(cid, { error: errs.slice(0, 5).join('; ') })
       if (!fresh.coverImage) {
         try {
           const ch = ents.find((x) => x.type === 'chapter')
@@ -343,12 +363,13 @@ export const useBuilder = create<BuilderStore>((set, get) => {
       patch(cid, { stopRequested: true })
       const thread = get().runs[cid]
       if (thread) builderThread(cid).then((t) => useAgentRun.getState().stop(t))
+      useAgentRun.getState().stopBackground()
       get().runs[cid]?.reviewResolver?.('stop')
     },
     feedback: async (cid, stepId, text) => {
       const thread = await builderThread(cid)
       patch(cid, { progress: 'Applying your feedback…' })
-      const b = await useAgentRun.getState().send(cid, thread, `Feedback from the GM on the step you just did — please revise accordingly:\n${text}`)
+      const b = await useAgentRun.getState().send(cid, thread, `Feedback from the GM on the step you just did — please revise accordingly:\n${text}`, { background: true, label: 'Module Builder: feedback' })
       if (b) addBatch(cid, stepId, b)
       patch(cid, { progress: '' })
     },

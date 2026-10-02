@@ -78,7 +78,7 @@ function StreamCard({ s, now }: { s: AiStream; now: number }) {
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-ink">{s.label}</div>
           <div className="truncate text-[11px] text-faint">
-            {shortModel(s.model)} · {secs}s{s.error ? ` · ${s.error}` : ''}
+            {shortModel(s.model)} · {s.queued ? 'queued' : `${secs}s`}{s.error ? ` · ${s.error}` : ''}
           </div>
         </div>
       </div>
@@ -90,7 +90,7 @@ function StreamCard({ s, now }: { s: AiStream; now: number }) {
           <div className={cx('text-xs leading-relaxed whitespace-pre-wrap text-ink', isJson && 'font-mono text-[11px]')}>{s.content}</div>
         </AutoScroll>
       ) : (
-        !done && !s.reasoning && <div className="text-xs text-faint">Waiting for the first words…</div>
+        !done && !s.reasoning && <div className="text-xs text-faint">{s.queued ? 'Queued — waiting for a free request slot…' : 'Waiting for the first words…'}</div>
       )}
     </div>
   )

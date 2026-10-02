@@ -40,6 +40,7 @@ export function BuilderPage() {
   const [premise, setPremise] = useState(campaign.premise)
   useEffect(() => setPremise(campaign.premise), [campaign.premise])
   const setBrief = (p: Partial<typeof brief>) => updateCampaign(campaign.id, { brief: { ...brief, ...p } })
+  const defaultToLevel = Math.min(20, campaign.partyLevel + ({ oneshot: 0, short: 1, arc: 3, extend: 2 } as Record<string, number>)[brief.scope ?? 'short'])
   const setMode = (step: string, mode: AutomationMode) => updateCampaign(campaign.id, { pipeline: { ...campaign.pipeline, [step]: mode } })
   const allMode = (mode: AutomationMode) => updateCampaign(campaign.id, { pipeline: Object.fromEntries(STEPS.map((s) => [s.id, mode])) })
 
@@ -76,12 +77,22 @@ export function BuilderPage() {
                 <option value="extend">Extend the existing campaign</option>
               </Select>
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <Field label="Party level">
                 <LiveInput type="number" min={1} max={20} value={campaign.partyLevel} onCommit={(v) => updateCampaign(campaign.id, { partyLevel: Number(v) || 1 })} />
               </Field>
               <Field label="Party size">
                 <LiveInput type="number" min={1} max={8} value={campaign.partySize} onCommit={(v) => updateCampaign(campaign.id, { partySize: Number(v) || 4 })} />
+              </Field>
+              <Field label="Level at the end" hint="The AI plans which chapter is played at which level.">
+                <LiveInput
+                  type="number"
+                  min={1}
+                  max={20}
+                  placeholder={String(defaultToLevel)}
+                  value={brief.toLevel ?? ''}
+                  onCommit={(v) => setBrief({ toLevel: v === '' ? undefined : Math.max(campaign.partyLevel, Number(v) || campaign.partyLevel) })}
+                />
               </Field>
             </div>
           </div>

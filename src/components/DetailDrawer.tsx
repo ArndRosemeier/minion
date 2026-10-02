@@ -26,6 +26,7 @@ import { deleteEntity, updateEntity, userCtx } from '@/db/repo'
 import { illustrateEntity } from '@/ai/generate'
 import { illustrateRef, makeMainRefImage, removeRefImage, uploadRefImage } from '@/lib/refArt'
 import { useEditor } from './EntityEditor'
+import { LEVELED_TYPES, levelFor } from '@/lib/levels'
 import { GeneratePanel } from './GeneratePanel'
 import { db } from '@/db/db'
 import { useBattle } from '@/state/battle'
@@ -127,7 +128,13 @@ function EntityDetail({ entity: e }: { entity: Entity }) {
 
   return (
     <div className="space-y-5 p-5">
-      <Header icon={meta.icon} color={meta.color} label={meta.label} title={e.name} sub={e.summary} />
+      <Header
+        icon={meta.icon}
+        color={meta.color}
+        label={LEVELED_TYPES.includes(e.type) ? `${meta.label} · party level ${levelFor(e, entities, campaign)}` : meta.label}
+        title={e.name}
+        sub={e.summary}
+      />
       {e.aliases.length > 0 && <div className="-mt-3 text-xs text-faint">Also: {e.aliases.join(', ')}</div>}
 
       {e.images.length > 0 && (

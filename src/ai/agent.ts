@@ -5,7 +5,8 @@ import { chat, type ORMessage } from './openrouter'
 import { ADVISOR_TOOL, executeTool, TOOLS } from './tools'
 import { campaignKnowledge, ENTITY_FIELDS_DOC, LINK_RULES, languageRule, STATBLOCK_SCHEMA } from './prompts'
 import type { Advisor, ChatMessage } from '@/types'
-import { SYSTEM_LABEL } from '@/types'
+import { LEVEL_PLANNING } from '@/lib/levels'
+import { SYSTEM_LABEL, type Campaign } from '@/types'
 
 export const AGENT_GUIDE = `You are Minion, the co-author and assistant of a game master. You have FULL read/write access to the campaign through tools: you can create, change and delete every entry, the party, campaign settings and battle maps, and look up the official rules.
 
@@ -24,7 +25,7 @@ What makes content great at the table:
 - Every rules reference (spell, condition, action, creature, item, trait) is a [[wikilink]] so the GM can tap it. The GM must never need another book.
 - Keep summaries short (one line). Use Markdown headings, lists and bold for scannability on a tablet.`
 
-export function buildSystemPrompt(campaignKnowledgeText: string, campaign: Parameters<typeof languageRule>[0]) {
+export function buildSystemPrompt(campaignKnowledgeText: string, campaign: Campaign) {
   return [
     AGENT_GUIDE,
     `Game system: ${SYSTEM_LABEL[campaign.system]}.`,
@@ -32,6 +33,7 @@ export function buildSystemPrompt(campaignKnowledgeText: string, campaign: Param
     LINK_RULES,
     ENTITY_FIELDS_DOC,
     STATBLOCK_SCHEMA,
+    LEVEL_PLANNING(campaign),
     `=== CURRENT CAMPAIGN STATE ===\n${campaignKnowledgeText}`,
   ].join('\n\n')
 }
@@ -84,6 +86,11 @@ export interface AgentCallbacks {
 
 const MAX_STEPS = 40
 
+/** tools without side effects — safe to run in parallel with anything */
+const READ_TOOLS = new Set(['read_entities', 'search_campaign', 'search_rules', 'read_rule'])
+/** slow generation tools — run together after the edits of the same turn */
+const SLOW_TOOLS = new Set(['illustrate', 'create_battlemap', 'update_battlemap', 'generate_complete', 'consult_advisors'])
+
 /**
  * Run one agent turn: the user message is already stored. Loops tool calls until the model answers.
  * Returns the change batch id used for this turn.
@@ -93,7 +100,7 @@ export async function runAgentTurn(
   threadId: string,
   cb: AgentCallbacks = {},
   signal?: AbortSignal,
-  opts: { batchId?: string; extraSystem?: string; model?: string } = {},
+  opts: { batchId?: string; extraSystem?: string; model?: string; label?: string; background?: boolean } = {},
 ): Promise<string> {
   const settings = getSettings()
   const batchId = opts.batchId ?? newId('b')
@@ -109,7 +116,7 @@ export async function runAgentTurn(
       ...historyToMessages(history),
     ]
     const model = opts.model || settings.chatModel
-    const res = await chat({ model, messages, tools, signal, onDelta: cb.onStream, onReasoning: cb.onReasoning, temperature: 0.7, label: 'Campaign chat', source: 'chat' })
+    const res = await chat({ model, messages, tools, signal, onDelta: cb.onStream, onReasoning: cb.onReasoning, temperature: 0.7, label: opts.label ?? 'Campaign chat', source: opts.background ? undefined : 'chat' })
     const msg: ChatMessage = {
       id: newId('m'),
       campaignId,
@@ -127,12 +134,13 @@ export async function runAgentTurn(
     cb.onStream?.('')
     if (!res.toolCalls.length) break
 
-    for (const call of res.toolCalls) {
+    // Run this turn's tool calls concurrently where safe: lookups in parallel, edits in the
+    // order the model asked for them, then slow generation work (images, maps, advisors) all at once.
+    const exec = async (call: (typeof res.toolCalls)[number]): Promise<string> => {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
       cb.onProgress?.(toolLabel(call.name, call.arguments))
-      let result: string
       try {
-        result = await executeTool(call.name, call.arguments, {
+        return await executeTool(call.name, call.arguments, {
           campaignId,
           ctx,
           signal,
@@ -144,16 +152,26 @@ export async function runAgentTurn(
         })
       } catch (e: any) {
         if (e?.name === 'AbortError') throw e
-        result = JSON.stringify({ error: e?.message ?? String(e) })
+        return JSON.stringify({ error: e?.message ?? String(e) })
       }
+    }
+    const results = new Map<string, string>()
+    const run = async (call: (typeof res.toolCalls)[number]) => results.set(call.id, await exec(call))
+    const reads = Promise.all(res.toolCalls.filter((c) => READ_TOOLS.has(c.name)).map(run))
+    for (const call of res.toolCalls.filter((c) => !READ_TOOLS.has(c.name) && !SLOW_TOOLS.has(c.name))) await run(call)
+    await reads
+    await Promise.all(res.toolCalls.filter((c) => SLOW_TOOLS.has(c.name)).map(run))
+    // store results in the order of the calls (providers expect that)
+    let t = Date.now()
+    for (const call of res.toolCalls) {
       const toolMsg: ChatMessage = {
         id: newId('m'),
         campaignId,
         threadId,
         role: 'tool',
-        content: result,
+        content: results.get(call.id) ?? JSON.stringify({ error: 'not executed' }),
         toolCallId: call.id,
-        createdAt: Date.now(),
+        createdAt: t++,
       }
       await db.messages.add(toolMsg)
     }

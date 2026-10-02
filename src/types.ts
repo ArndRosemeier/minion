@@ -153,6 +153,8 @@ export interface Entity {
   /** asset ids of illustrations; first is the main image */
   images: string[]
   stats?: StatBlock
+  /** party level while this is played (chapters, scenes, encounters, dungeons); inherited by children */
+  level?: number
   /** chapters/scenes ordering */
   order?: number
   /** scene -> chapter, sub-location -> location */
@@ -209,7 +211,7 @@ export interface Campaign {
   /** campaign-specific art for read-only rules entries (refId -> asset ids, first is main) */
   refImages?: Record<string, string[]>
   /** module builder brief */
-  brief?: { scope: string; notes: string }
+  brief?: { scope: string; notes: string; toLevel?: number }
   /** pipeline step status (done marks) */
   pipelineDone?: Record<string, boolean>
   /** pipeline step modes, keyed by step id */
@@ -414,6 +416,8 @@ export interface AppSettings {
   diceColor: string
   /** 'full' = send everything when small enough, 'index' = index + lookups */
   contextMode: 'auto' | 'full' | 'index'
+  /** max simultaneous AI requests per lane (text / images); default 4 */
+  parallelRequests?: number
   /** show the live AI activity overlay automatically (default on) */
   showAiActivity?: boolean
   /** recently used models, most recent first */

@@ -3,8 +3,8 @@ import { db } from '@/db/db'
 import { createEntity, createMap, undoBatch, updateEntity, updateMap, type ChangeCtx } from '@/db/repo'
 import { newId } from '@/lib/id'
 import { normalizeName } from '@/compendium/compendium'
-import { generateBattlemapImage, generateEntityData, generateStatBlock, generateSummaries, illustrateEntity } from '@/ai/generate'
-import { pool, stepPrompt, useBuilder } from './builder'
+import { generateBattlemapImage, generateEntityData, generateStatBlock, generateSummaries, illustrateEntities } from '@/ai/generate'
+import { pool, stepPrompt, useBuilder, writeChaptersParallel } from './builder'
 import { seedEncounterMap } from '@/lib/encounterSetup'
 import { useAgentRun } from './agentRun'
 import type { GapCategory, GapKind } from '@/lib/gaps'
@@ -51,7 +51,7 @@ export const useFill = create<FillStore>((set, get) => {
 
   async function agent(cid: string, prompt: string) {
     const thread = await useBuilder.getState().threadId(cid)
-    const b = await useAgentRun.getState().send(cid, thread, prompt)
+    const b = await useAgentRun.getState().send(cid, thread, prompt, { background: true, label: 'Fill gaps' })
     addBatch(cid, b)
     if (!b) throw new Error('AI step did not complete')
   }
@@ -113,7 +113,7 @@ export const useFill = create<FillStore>((set, get) => {
         }
         await pool(
           [...byName.values()],
-          2,
+          12,
           async (slots) => {
             const first = cat.items.find((x) => x.id === slots[0])!
             patch(cid, { progress: `Creating stat block: ${first.label}` })
@@ -148,7 +148,7 @@ export const useFill = create<FillStore>((set, get) => {
       case 'statsNpc': {
         await pool(
           ids,
-          3,
+          12,
           async (id) => {
             const e = await fresh(id)
             if (!e || e.stats) return tick(cid)
@@ -165,28 +165,11 @@ export const useFill = create<FillStore>((set, get) => {
         return
       }
       case 'chapters': {
-        for (const id of ids) {
-          if (stopped(cid)) return
-          const ch = await fresh(id)
-          if (!ch) {
-            tick(cid)
-            continue
-          }
-          patch(cid, { progress: `Writing chapter: ${ch.name}` })
-          try {
-            await agent(
-              cid,
-              stepPrompt(
-                'write',
-                campaign,
-                `Write chapter “${ch.name}” (id ${ch.id}) and all its scenes out in full, playable detail: read-aloud boxes ("> "), what happens and why, NPC lines and reactions, skill checks with DCs, clues, treasure (official items linked), consequences and transitions. Keep the existing structure, expand and improve it. Link every rules element and entry with [[ ]]. Finish by adding the tag "written" to the chapter.`,
-              ),
-            )
-          } catch (e: any) {
-            fail(cid, `${ch.name}: ${e.message}`)
-          }
-          tick(cid)
-        }
+        patch(cid, { progress: `Writing ${ids.length} chapters in parallel…` })
+        const r = await writeChaptersParallel(campaign, ids, (msg) => patch(cid, { progress: msg }), () => stopped(cid))
+        r.batches.forEach((b) => addBatch(cid, b))
+        r.errors.forEach((name) => fail(cid, `Chapter not written: ${name}`))
+        for (let i = 0; i < ids.length; i++) tick(cid)
         return
       }
       case 'summaries': {
@@ -206,7 +189,7 @@ export const useFill = create<FillStore>((set, get) => {
       case 'encMaps': {
         await pool(
           ids,
-          2,
+          12,
           async (id) => {
             const enc = await fresh(id)
             if (!enc) return tick(cid)
@@ -245,7 +228,7 @@ export const useFill = create<FillStore>((set, get) => {
       case 'mapImages': {
         await pool(
           ids,
-          2,
+          12,
           async (id) => {
             const map = await db.maps.get(id)
             if (!map || map.image) return tick(cid)
@@ -265,43 +248,27 @@ export const useFill = create<FillStore>((set, get) => {
         return
       }
       case 'creatureArt': {
-        const { paintCreature } = await import('@/lib/creatureArt')
-        await pool(
-          ids,
-          3,
-          async (key) => {
-            const [source, ...rest] = key.split(':')
-            const id = rest.join(':')
-            const label = cat.items.find((x) => x.id === key)?.label ?? id
-            patch(cid, { progress: `Portrait: ${label}` })
-            try {
-              await paintCreature(cid, { id, name: label, source: source as 'rules' | 'campaign' }, ctx)
-            } catch (e: any) {
-              fail(cid, `${label}: ${e.message}`)
-            }
-            tick(cid)
-          },
-          () => stopped(cid),
-        )
+        const { paintAll } = await import('@/ai/complete')
+        const targets = ids.map((key) => {
+          const [source, ...rest] = key.split(':')
+          return { id: rest.join(':'), name: cat.items.find((x) => x.id === key)?.label ?? key, source: source as 'rules' | 'campaign' }
+        })
+        let last = 0
+        await paintAll(cid, targets, ctx, (d) => {
+          const m = d.match(/^(\d+)\//)
+          const n = m ? Number(m[1]) : last
+          for (; last < n; last++) tick(cid)
+          patch(cid, { progress: `Portraits: ${d}` })
+        })
+        for (; last < targets.length; last++) tick(cid)
         return
       }
       case 'images': {
-        await pool(
-          ids,
-          3,
-          async (id) => {
-            const e = await fresh(id)
-            if (!e || e.images.length) return tick(cid)
-            patch(cid, { progress: `Illustrating: ${e.name}` })
-            try {
-              await illustrateEntity(campaign, e, undefined, ctx)
-            } catch (err: any) {
-              fail(cid, `${e.name}: ${err.message}`)
-            }
-            tick(cid)
-          },
-          () => stopped(cid),
-        )
+        const list = (await db.entities.bulkGet(ids)).filter((e): e is Entity => !!e && !e.images.length)
+        for (let i = 0; i < ids.length - list.length; i++) tick(cid)
+        const errors = await illustrateEntities(campaign, list, ctx, (_d, _t, name) => tick(cid, `Illustrated: ${name}`), undefined)
+        errors.forEach((e) => fail(cid, e))
+        return
       }
     }
   }
@@ -316,12 +283,17 @@ export const useFill = create<FillStore>((set, get) => {
       const ctx: ChangeCtx = { batchId: newId('b'), source: 'ai' }
       set((s) => ({ runs: { ...s.runs, [cid]: { running: true, stopRequested: false, total, done: 0, progress: 'Starting…', errors: [], batches: [ctx.batchId] } } }))
       try {
-        for (const w of work) {
-          if (stopped(cid)) break
-          // re-read campaign so steps see settings changed meanwhile
-          const c = (await db.campaigns.get(cid)) ?? campaign
-          await runCategory(c, w.cat, w.ids, ctx)
+        // two lanes in parallel: text/structure work in dependency order, and images
+        const IMAGE_KINDS: GapKind[] = ['mapImages', 'creatureArt', 'images']
+        const lane = async (items: typeof work) => {
+          for (const w of items) {
+            if (stopped(cid)) break
+            // re-read campaign so steps see settings changed meanwhile
+            const c = (await db.campaigns.get(cid)) ?? campaign
+            await runCategory(c, w.cat, w.ids, ctx)
+          }
         }
+        await Promise.all([lane(work.filter((w) => !IMAGE_KINDS.includes(w.cat.kind))), lane(work.filter((w) => IMAGE_KINDS.includes(w.cat.kind)))])
       } finally {
         patch(cid, { running: false, progress: stopped(cid) ? 'Stopped.' : 'Done.', finishedAt: Date.now() })
       }
@@ -332,6 +304,7 @@ export const useFill = create<FillStore>((set, get) => {
         .getState()
         .threadId(cid)
         .then((t) => useAgentRun.getState().stop(t))
+      useAgentRun.getState().stopBackground()
     },
     undo: async (cid) => {
       const r = get().runs[cid]

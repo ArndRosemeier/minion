@@ -11,6 +11,8 @@ export interface AiStream {
   reasoning: string
   content: string
   startedAt: number
+  /** waiting for a free request slot */
+  queued?: boolean
   endedAt?: number
   error?: string
 }
@@ -56,7 +58,7 @@ const schedule = () => {
 const KEEP_FINISHED_MS = 8000
 
 export const activity = {
-  start(s: { label: string; model: string; kind: AiStream['kind']; source?: AiStream['source']; content?: string }): string {
+  start(s: { label: string; model: string; kind: AiStream['kind']; source?: AiStream['source']; content?: string; queued?: boolean }): string {
     const id = newId('ai')
     useActivity.setState((st) => ({
       // the overlay opens again when the AI starts after being idle
@@ -64,6 +66,11 @@ export const activity = {
       streams: [...st.streams.filter((x) => !x.endedAt || Date.now() - x.endedAt < KEEP_FINISHED_MS), { id, reasoning: '', content: s.content ?? '', startedAt: Date.now(), ...s }],
     }))
     return id
+  },
+  /** a request slot was granted (timer restarts) */
+  running(id: string) {
+    flush()
+    useActivity.setState((s) => ({ streams: s.streams.map((x) => (x.id === id ? { ...x, queued: false, startedAt: Date.now() } : x)) }))
   },
   update(id: string, patch: Partial<Pick<AiStream, 'reasoning' | 'content'>>) {
     pending.set(id, { ...(pending.get(id) ?? {}), ...patch })

@@ -2,6 +2,7 @@ import { chat, chatJson, generateImage } from './openrouter'
 import { campaignHeader, ENTITY_FIELDS_DOC, LINK_RULES, languageRule, STATBLOCK_SCHEMA, entityIndexLine } from './prompts'
 import { getSettings } from '@/state/settings'
 import { dataUrlToBlob, saveAsset, updateEntity, type ChangeCtx } from '@/db/repo'
+import { db } from '@/db/db'
 import type { Asset, Campaign, Entity, EntityType } from '@/types'
 import { SYSTEM_LABEL } from '@/types'
 
@@ -67,6 +68,7 @@ export function sanitizeEntityData(d: any): Partial<Entity> {
   }
   if (typeof d.parentId === 'string') out.parentId = d.parentId
   if (typeof d.order === 'number') out.order = d.order
+  if (typeof d.level === 'number') out.level = d.level
   if (d.encounter && typeof d.encounter === 'object') {
     out.encounter = {
       creatures: Array.isArray(d.encounter.creatures) ? d.encounter.creatures : [],
@@ -126,11 +128,72 @@ export async function generateIllustration(
 }
 
 /** Illustrate an entity and prepend the image to its gallery. */
-export async function illustrateEntity(campaign: Campaign, e: Entity, direction?: string, ctx?: ChangeCtx) {
-  const aspect = e.type === 'npc' || e.type === 'creature' ? '3:4' : e.type === 'item' ? '1:1' : '16:9'
-  const asset = await generateIllustration(campaign, entitySubject(e), { aspectRatio: aspect, direction })
-  await updateEntity(e.id, { images: [asset.id, ...e.images] }, ctx)
+export const entityAspect = (e: Pick<Entity, 'type'>) => (e.type === 'npc' || e.type === 'creature' ? '3:4' : e.type === 'item' ? '1:1' : '16:9')
+
+/** Illustrate an entry; pass a ready image prompt to skip the prompt-writing call. */
+export async function illustrateEntity(campaign: Campaign, e: Entity, direction?: string, ctx?: ChangeCtx, promptOverride?: string) {
+  const asset = await generateIllustration(campaign, entitySubject(e), { aspectRatio: entityAspect(e), direction, promptOverride })
+  // re-read: other steps may have changed the entry meanwhile
+  const fresh = (await db.entities.get(e.id)) ?? e
+  await updateEntity(e.id, { images: [asset.id, ...fresh.images] }, ctx)
   return asset
+}
+
+/** Write image prompts for many subjects with a few batched calls instead of one call per image. */
+export async function writeImagePrompts(campaign: Campaign, items: { id: string; subject: string }[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  const chunks: { id: string; subject: string }[][] = []
+  for (let i = 0; i < items.length; i += 8) chunks.push(items.slice(i, i + 8))
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const { data } = await chatJson<Record<string, string>>({
+          label: `Writing ${chunk.length} image prompts`,
+          model: getSettings().fastModel,
+          temperature: 0.8,
+          messages: [
+            {
+              role: 'system',
+              content: `For each tabletop RPG subject write a prompt for an image model: an evocative illustration (character portrait, place, scene, creature or item as fits), no text or letters in the image. Art style: ${campaign.artStyle || 'painterly fantasy'}. English, max 100 words each. Return ONLY JSON mapping each id to its prompt.`,
+            },
+            { role: 'user', content: JSON.stringify(chunk.map((c) => ({ id: c.id, subject: clip(c.subject, 1500) }))) },
+          ],
+        })
+        for (const c of chunk) if (typeof data?.[c.id] === 'string') out[c.id] = data[c.id]
+      } catch {
+        /* entries without a prompt fall back to their own prompt call */
+      }
+    }),
+  )
+  return out
+}
+
+/** Illustrate many entries: batched prompts, then all images at once (the request limiter caps concurrency). */
+export async function illustrateEntities(
+  campaign: Campaign,
+  entities: Entity[],
+  ctx?: ChangeCtx,
+  onProgress?: (done: number, total: number, name: string) => void,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const prompts = await writeImagePrompts(
+    campaign,
+    entities.map((e) => ({ id: e.id, subject: entitySubject(e) })),
+  )
+  let done = 0
+  const errors: string[] = []
+  await Promise.all(
+    entities.map(async (e) => {
+      if (signal?.aborted) return
+      try {
+        await illustrateEntity(campaign, e, undefined, ctx, prompts[e.id])
+      } catch (err: any) {
+        errors.push(`${e.name}: ${err?.message ?? err}`)
+      }
+      onProgress?.(++done, entities.length, e.name)
+    }),
+  )
+  return errors
 }
 
 const ASPECTS: [string, number][] = [

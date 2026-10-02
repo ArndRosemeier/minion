@@ -5,7 +5,8 @@ import { useSettings } from '@/state/settings'
 import { useGenJobs } from '@/state/genJobs'
 import { useUI } from '@/state/ui'
 import { undoBatch } from '@/db/repo'
-import { PART_LABEL, partsFor, type Part } from '@/ai/complete'
+import { LEVEL_TYPES, PART_LABEL, partsFor, type Part } from '@/ai/complete'
+import { levelFor } from '@/lib/levels'
 import { contextTokens, formatUsd, type Prices } from '@/lib/gaps'
 import { imageCost, usePrices } from '@/lib/usePrices'
 import { Button, Input, Segmented, Spinner, cx } from './ui'
@@ -71,6 +72,7 @@ export function GeneratePanel({
   const [off, setOff] = useState<Set<Part>>(new Set())
   const [instructions, setInstructions] = useState('')
   const [size, setSize] = useState<DungeonSize>('medium')
+  const [levelOverride, setLevelOverride] = useState<number | undefined>(undefined)
   const [jobId, setJobId] = useState<string | null>(null)
   const job = useGenJobs((s) => (jobId ? s.jobs[jobId] : undefined))
   const start = useGenJobs((s) => s.start)
@@ -79,6 +81,8 @@ export function GeneratePanel({
 
   useEffect(() => setOff(new Set()), [type])
   const parts = useMemo(() => new Set(available.filter((p) => !off.has(p))), [available, off])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const inheritedLevel = useMemo(() => levelFor(getDraft(), entities, campaign), [entities, campaign, type])
   const cost = prices ? estimate(type, parts, prices, contextTokens(entities), size) : null
 
   // finished successfully → hand over
@@ -90,7 +94,7 @@ export function GeneratePanel({
   const run = () => {
     const draft = getDraft()
     onStart?.()
-    setJobId(start(campaign.id, { type, id: existingId, draft: { ...draft, type } }, parts, { instructions: [instructions.trim(), context].filter(Boolean).join('\n') || undefined, size }))
+    setJobId(start(campaign.id, { type, id: existingId, draft: { ...draft, type } }, parts, { instructions: [instructions.trim(), context].filter(Boolean).join('\n') || undefined, size, level: levelOverride }))
   }
 
   if (job) {
@@ -196,6 +200,20 @@ export function GeneratePanel({
             ]}
           />
         </div>
+      )}
+      {LEVEL_TYPES.includes(type) && (
+        <label className="flex items-center gap-2 text-sm text-muted">
+          Party level
+          <input
+            type="number"
+            min={1}
+            max={20}
+            value={levelOverride ?? inheritedLevel}
+            onChange={(e) => setLevelOverride(e.target.value === '' ? undefined : Number(e.target.value))}
+            className="h-8 w-16 rounded-md border border-line bg-surface-2 px-2 text-center text-sm text-ink"
+          />
+          {levelOverride === undefined && <span className="text-xs text-faint">inherited</span>}
+        </label>
       )}
       <Input
         placeholder={type === 'dungeon' ? 'Direction, e.g. “a drowned dwarven mine taken over by a fungus cult”' : 'Optional direction for the AI…'}

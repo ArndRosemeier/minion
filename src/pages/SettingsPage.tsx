@@ -114,6 +114,19 @@ export function SettingsPage() {
       <Card className="space-y-4 p-5">
         <h2 className="font-display text-lg">Reading & play</h2>
         <Toggle checked={settings.autoLink} onChange={(autoLink) => update({ autoLink })} label="Auto-link names of campaign entries in text" />
+        <Field label="Parallel AI requests" hint="How many text and how many image requests may run at the same time during bulk generation. Higher is faster; too high can hit your provider’s rate limits.">
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={1}
+              max={10}
+              value={settings.parallelRequests ?? 4}
+              onChange={(e) => update({ parallelRequests: Number(e.target.value) })}
+              className="w-56 accent-[var(--color-accent)]"
+            />
+            <span className="w-6 text-sm font-semibold">{settings.parallelRequests ?? 4}</span>
+          </div>
+        </Field>
         <Toggle
           checked={settings.showAiActivity !== false}
           onChange={(showAiActivity) => update({ showAiActivity })}

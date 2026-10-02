@@ -34,6 +34,7 @@ export const ENTITY_FIELDS_DOC = `Entity fields:
 - secrets (markdown; GM-only secrets, twists, hidden info)
 - parentId (scene -> its chapter id; sub-location -> parent location id)
 - order (number; ordering of chapters and of scenes within a chapter)
+- level (number; the party level while this chapter/scene/encounter/dungeon is played — children inherit it)
 - stats (StatBlock, for creatures and NPCs that may fight)
 - dungeon: complex sites (rooms are locations with parent = dungeon). Build dungeons and finished encounters with the generate_complete tool.
 - encounter ({ creatures: {refId, name, count}[], difficulty?, tactics? } for type "encounter"; refId is a campaign entity id or compendium id; name is the creature name)`
@@ -68,6 +69,7 @@ export function entityIndexLine(e: Entity) {
   const extra = [
     e.parentId && `parent=${e.parentId}`,
     e.order !== undefined && `order=${e.order}`,
+    e.level !== undefined && `party level ${e.level}`,
     e.stats && (e.stats.level !== undefined ? `lvl ${e.stats.level}` : e.stats.cr ? `CR ${e.stats.cr}` : 'stats'),
     e.images.length ? `${e.images.length} img` : '',
   ]
