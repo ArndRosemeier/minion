@@ -3,6 +3,7 @@ import { createEntity, createMap, updateEntity, updateMap, type ChangeCtx } from
 import { newId } from '@/lib/id'
 import { placeEncounter } from '@/lib/encounterSetup'
 import { cropToDataUrl } from '@/lib/mapImage'
+import { creatureTargetsForEncounters } from '@/lib/creatureArt'
 import { getSettings } from '@/state/settings'
 import { chatJson } from './openrouter'
 import { generateBattlemapImage, illustrateEntity, sanitizeEntityData } from './generate'
@@ -11,6 +12,7 @@ import {
   computeDifficultyLabel,
   createMissingLinks,
   creatureCandidates,
+  paintAll,
   resolveEncounterCreatures,
   type CompleteInput,
   type CompleteOptions,
@@ -281,6 +283,15 @@ export async function buildDungeon(
         n++
         detail(`${n} encounters ready`)
       }
+    })
+  }
+
+  if (parts.has('creatureArt')) {
+    await step('creatureArt', async (detail) => {
+      const encIds = rooms.flatMap((r) => (r.encounterId ? [r.encounterId] : []))
+      const targets = await creatureTargetsForEncounters(campaign.id, encIds)
+      if (!targets.length) return detail('all creatures already have art')
+      await paintAll(campaign.id, targets, ctx, detail, opts.signal)
     })
   }
 

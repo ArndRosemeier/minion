@@ -1,7 +1,11 @@
 import { useState } from 'react'
-import { BookOpen, Copy, Eye, EyeOff, HeartPulse, Minus, Plus, Shield, Swords, Trash2, X } from 'lucide-react'
+import { BookOpen, Copy, Eye, EyeOff, HeartPulse, ImagePlus, Minus, Plus, Shield, Swords, Trash2, X } from 'lucide-react'
 import { useCampaign } from '@/state/campaign'
-import { useUI } from '@/state/ui'
+import { useUI, toast } from '@/state/ui'
+import { getRef } from '@/compendium/compendium'
+import { illustrateRef } from '@/lib/refArt'
+import { illustrateEntity } from '@/ai/generate'
+import { userCtx } from '@/db/repo'
 import { resolveCreature } from '@/lib/creatures'
 import { applyHp, COMMON_CONDITIONS, VALUED_CONDITIONS_PF2E } from '@/lib/mapOps'
 import { newId } from '@/lib/id'
@@ -23,6 +27,7 @@ export function TokenPanel({
   const openDetail = useUI((s) => s.openDetail)
   const [amount, setAmount] = useState('')
   const [condOpen, setCondOpen] = useState(false)
+  const [painting, setPainting] = useState(false)
   void compendiumVersion
   if (!tokens.length) return <p className="text-sm text-faint">Tap a token to select it. Use “multi” to select several.</p>
 
@@ -120,6 +125,34 @@ export function TokenPanel({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-[10px] font-bold tracking-widest text-faint uppercase">Actions & spells</div>
+            <div className="flex-1" />
+            {!t.image && !(creature.source === 'rules' ? campaign.refImages?.[creature.refId]?.length : index.byId.get(creature.refId)?.images.length) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<ImagePlus className="size-4" />}
+                loading={painting}
+                title="Paint a portrait for this creature (used for all its tokens)"
+                onClick={async () => {
+                  setPainting(true)
+                  try {
+                    if (creature.source === 'rules') {
+                      const r = getRef(campaign.system, creature.refId)
+                      if (r) await illustrateRef(campaign, r, undefined, userCtx())
+                    } else {
+                      const e = index.byId.get(creature.refId)
+                      if (e) await illustrateEntity(campaign, e, undefined, userCtx())
+                    }
+                  } catch (err: any) {
+                    toast(err.message, 'error')
+                  } finally {
+                    setPainting(false)
+                  }
+                }}
+              >
+                Portrait
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"

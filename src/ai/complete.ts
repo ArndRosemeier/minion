@@ -5,6 +5,7 @@ import { EntityIndex, extractLinks, resolveLink } from '@/lib/links'
 import { resolveCreature } from '@/lib/creatures'
 import { encounterDifficulty } from '@/lib/encounterMath'
 import { seedEncounterMap } from '@/lib/encounterSetup'
+import { creatureTargetsForEncounters, paintCreature, type ArtTarget } from '@/lib/creatureArt'
 import { ENTITY_TYPES } from '@/lib/entityTypes'
 import { getSettings } from '@/state/settings'
 import { chatJson } from './openrouter'
@@ -17,13 +18,14 @@ import { SYSTEM_LABEL } from '@/types'
 // Parts & job steps
 // ---------------------------------------------------------------------------
 
-export type Part = 'text' | 'stats' | 'encounter' | 'creatures' | 'map' | 'image' | 'links' | 'rooms' | 'roomMaps' | 'roomImages'
+export type Part = 'text' | 'stats' | 'encounter' | 'creatures' | 'creatureArt' | 'map' | 'image' | 'links' | 'rooms' | 'roomMaps' | 'roomImages'
 
 export const PART_LABEL: Record<Part, string> = {
   text: 'Text & description',
   stats: 'Stat block',
   encounter: 'Creatures, tactics & difficulty',
   creatures: 'Create missing creatures (homebrew, full stats)',
+  creatureArt: 'Portraits for its creatures (also used as tokens)',
   map: 'Battle map (painted, creatures placed)',
   image: 'Illustration',
   links: 'Create linked entries that don’t exist yet',
@@ -35,12 +37,12 @@ export const PART_LABEL: Record<Part, string> = {
 export function partsFor(type: EntityType): Part[] {
   switch (type) {
     case 'encounter':
-      return ['text', 'encounter', 'creatures', 'map', 'image', 'links']
+      return ['text', 'encounter', 'creatures', 'creatureArt', 'map', 'image', 'links']
     case 'npc':
     case 'creature':
       return ['text', 'stats', 'image', 'links']
     case 'dungeon':
-      return ['text', 'rooms', 'creatures', 'map', 'roomMaps', 'image', 'roomImages', 'links']
+      return ['text', 'rooms', 'creatures', 'creatureArt', 'map', 'roomMaps', 'image', 'roomImages', 'links']
     case 'note':
       return ['text']
     default:
@@ -49,7 +51,7 @@ export function partsFor(type: EntityType): Part[] {
 }
 
 /** parts that need an image model (for cost hints) */
-export const IMAGE_PARTS: Part[] = ['map', 'image', 'roomMaps', 'roomImages']
+export const IMAGE_PARTS: Part[] = ['map', 'image', 'creatureArt', 'roomMaps', 'roomImages']
 
 export type StepStatus = 'pending' | 'running' | 'done' | 'skipped' | 'error'
 export interface JobStep {
@@ -68,6 +70,7 @@ export function stepsFor(type: EntityType, parts: Set<Part>): JobStep[] {
     out.push(s('design', parts.has('rooms') ? 'Design dungeon, rooms & encounters' : 'Write dungeon text'))
     out.push(s('save', 'Save entries'))
     if (parts.has('creatures')) out.push(s('creatures', PART_LABEL.creatures))
+    if (parts.has('creatureArt')) out.push(s('creatureArt', 'Creature portraits'))
     if (parts.has('map')) out.push(s('map', 'Paint overview map from the floor plan'))
     if (parts.has('roomMaps')) out.push(s('roomMaps', PART_LABEL.roomMaps))
     if (parts.has('image')) out.push(s('image', 'Dungeon illustration'))
@@ -79,6 +82,7 @@ export function stepsFor(type: EntityType, parts: Set<Part>): JobStep[] {
   if (writes.length) out.push(s('write', `Write ${writes.join(', ')}`))
   out.push(s('save', 'Save'))
   if (parts.has('creatures')) out.push(s('creatures', PART_LABEL.creatures))
+  if (parts.has('creatureArt')) out.push(s('creatureArt', 'Creature portraits'))
   if (parts.has('map')) out.push(s('map', PART_LABEL.map))
   if (parts.has('image')) out.push(s('image', PART_LABEL.image))
   if (parts.has('links')) out.push(s('links', PART_LABEL.links))
@@ -220,6 +224,27 @@ export async function createMissingLinks(campaign: Campaign, entityIds: string[]
   return n
 }
 
+/** Paint portraits for creature targets, 3 at a time. */
+export async function paintAll(campaignId: string, targets: ArtTarget[], ctx: ChangeCtx, detail: (d: string) => void, signal?: AbortSignal) {
+  if (!targets.length) return
+  let n = 0
+  const work = [...targets]
+  const errors: string[] = []
+  const worker = async () => {
+    for (let t = work.shift(); t; t = work.shift()) {
+      if (signal?.aborted) return
+      detail(`${++n}/${targets.length}: ${t.name}`)
+      try {
+        await paintCreature(campaignId, t, ctx)
+      } catch (e: any) {
+        errors.push(`${t.name}: ${e.message}`)
+      }
+    }
+  }
+  await Promise.all([worker(), worker(), worker()])
+  if (errors.length) detail(errors.join('; '))
+}
+
 // ---------------------------------------------------------------------------
 // Complete one entity
 // ---------------------------------------------------------------------------
@@ -353,6 +378,14 @@ export async function completeEntity(
       const difficulty = await computeDifficultyLabel(campaign, creatures)
       await updateEntity(enc.id, { encounter: { ...enc.encounter, creatures, difficulty } }, ctx)
       detail(`${creatures.reduce((s, c) => s + c.count, 0)} creatures · ${difficulty}`)
+    })
+  }
+
+  if (parts.has('creatureArt') && type === 'encounter') {
+    await step('creatureArt', async (detail) => {
+      const targets = await creatureTargetsForEncounters(campaign.id, [saved.id])
+      if (!targets.length) return detail('all creatures already have art')
+      await paintAll(campaign.id, targets, ctx, detail, opts.signal)
     })
   }
 

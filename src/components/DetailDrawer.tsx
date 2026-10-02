@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Copy,
@@ -10,6 +10,7 @@ import {
   Plus,
   Swords,
   Trash2,
+  Upload,
   Wand2,
   X,
 } from 'lucide-react'
@@ -23,6 +24,7 @@ import { AssetImage } from './AssetImage'
 import { Button, ConfirmModal, cx, IconButton, Select } from './ui'
 import { deleteEntity, updateEntity, userCtx } from '@/db/repo'
 import { illustrateEntity } from '@/ai/generate'
+import { illustrateRef, makeMainRefImage, removeRefImage, uploadRefImage } from '@/lib/refArt'
 import { useEditor } from './EntityEditor'
 import { GeneratePanel } from './GeneratePanel'
 import { db } from '@/db/db'
@@ -356,6 +358,88 @@ function DungeonBlock({ entity: e }: { entity: Entity }) {
   )
 }
 
+/** Campaign-specific images for a read-only rules entry. */
+function RefGallery({ r }: { r: RefEntry }) {
+  const { campaign } = useCampaign()
+  const show = useUI((s) => s.show)
+  const images = campaign.refImages?.[r.id] ?? []
+  const [sel, setSel] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const file = useRef<HTMLInputElement>(null)
+  const current = images[Math.min(sel, images.length - 1)]
+  const illustrate = async () => {
+    setBusy(true)
+    try {
+      await illustrateRef(campaign, r, undefined, userCtx())
+      setSel(0)
+      toast('Illustration created', 'success')
+    } catch (err: any) {
+      toast(err.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="space-y-2">
+      {current && (
+        <div className="group relative">
+          <button className="block w-full overflow-hidden rounded-xl border border-line" onClick={() => show({ image: current, title: r.name })}>
+            <AssetImage id={current} className="max-h-[50vh] w-full object-cover" />
+          </button>
+          <IconButton
+            size="sm"
+            variant="secondary"
+            label="Remove image"
+            icon={<X />}
+            className="absolute top-2 right-2 bg-black/60"
+            onClick={() => removeRefImage(campaign.id, r.id, current, userCtx())}
+          />
+        </div>
+      )}
+      {images.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto">
+          {images.map((id, i) => (
+            <button
+              key={id}
+              onClick={() => {
+                setSel(i)
+                makeMainRefImage(campaign.id, r.id, id)
+              }}
+              title="Use as main image (also for tokens)"
+              className={cx('size-14 shrink-0 overflow-hidden rounded-md border-2', id === current ? 'border-accent' : 'border-transparent')}
+            >
+              <AssetImage id={id} className="size-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" icon={<ImagePlus className="size-4" />} loading={busy} onClick={illustrate}>
+          Illustrate
+        </Button>
+        <Button size="sm" icon={<Upload className="size-4" />} onClick={() => file.current?.click()}>
+          Upload
+        </Button>
+        {current && (
+          <Button size="sm" icon={<MonitorPlay className="size-4" />} onClick={() => show({ image: current, title: r.name })}>
+            Show players
+          </Button>
+        )}
+        <input
+          ref={file}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) uploadRefImage(campaign.id, r.id, f, userCtx())
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
 function RefDetail({ entry: r }: { entry: RefEntry }) {
   const { campaign } = useCampaign()
   const openEditor = useEditor((s) => s.open)
@@ -382,6 +466,7 @@ function RefDetail({ entry: r }: { entry: RefEntry }) {
           ))}
         </div>
       )}
+      <RefGallery r={r} />
       <div className="flex flex-wrap gap-2">
         {r.stats && activeMap && (
           <Button
@@ -407,6 +492,7 @@ function RefDetail({ entry: r }: { entry: RefEntry }) {
                 summary: r.summary ?? '',
                 body: [r.meta && Object.entries(r.meta).map(([k, v]) => `**${k}** ${v}`).join('  \n'), r.text].filter(Boolean).join('\n\n'),
                 stats: r.stats ? structuredClone(r.stats) : undefined,
+                images: [...(campaign.refImages?.[r.id] ?? [])],
                 tags: ['homebrew'],
               },
             })

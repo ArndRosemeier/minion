@@ -2,6 +2,7 @@ import { extractLinks, resolveLink, type EntityIndex } from './links'
 import { resolveCreature } from './creatures'
 import { ENTITY_TYPES } from './entityTypes'
 import { encounterForMap, needsSeeding } from './encounterSetup'
+import { creaturesWithoutArt } from './creatureArt'
 import type { BattleMap, Campaign, Entity, EntityType } from '@/types'
 
 export type GapKind =
@@ -17,6 +18,7 @@ export type GapKind =
   | 'encSetup'
   | 'mapImages'
   | 'images'
+  | 'creatureArt'
 
 export interface GapItem {
   id: string
@@ -187,6 +189,15 @@ export function computeGaps(campaign: Campaign, entities: Entity[], maps: Battle
     items: maps.filter((m) => !m.image).map((m) => ({ id: m.id, label: m.name, sub: m.description.slice(0, 80) })),
   })
 
+  cats.push({
+    id: 'creatureArt',
+    kind: 'creatureArt',
+    title: 'Creatures in play without portraits',
+    description: 'Rules and campaign creatures used in encounters or on maps. The portrait is also shown on all their tokens.',
+    defaultOn: true,
+    items: creaturesWithoutArt(campaign, entities, maps, index).map((t) => ({ id: `${t.source}:${t.id}`, label: t.name, sub: t.source === 'rules' ? 'rules creature' : 'campaign creature' })),
+  })
+
   for (const { type, defaultOn } of IMAGE_TYPES) {
     cats.push({
       id: `images:${type}`,
@@ -224,6 +235,7 @@ export function estimateCost(cat: GapCategory, n: number, p: Prices, ctx: number
   const image = 1400 * (p.image.imageOut || p.image.out) + 100 * p.image.out + 700 * p.image.in + fastPrompt
   switch (cat.kind) {
     case 'images':
+    case 'creatureArt':
     case 'mapImages':
       return n * image
     case 'encMaps':

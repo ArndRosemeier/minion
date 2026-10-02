@@ -255,6 +255,26 @@ export const useBuilder = create<BuilderStore>((set, get) => {
         },
         () => stopped(cid),
       )
+      // portraits for rules creatures used in encounters
+      {
+        const { creatureTargetsForEncounters, paintCreature } = await import('@/lib/creatureArt')
+        const encIds = ents.filter((e) => e.type === 'encounter').map((e) => e.id)
+        const targets = (await creatureTargetsForEncounters(cid, encIds)).filter((t) => t.source === 'rules')
+        let k = 0
+        await pool(
+          targets,
+          3,
+          async (t) => {
+            patch(cid, { progress: `Creature portrait ${++k}/${targets.length}: ${t.name}` })
+            try {
+              await paintCreature(cid, t, ctx)
+            } catch (err: any) {
+              patch(cid, { error: `${t.name}: ${err.message}` })
+            }
+          },
+          () => stopped(cid),
+        )
+      }
       if (!fresh.coverImage) {
         try {
           const ch = ents.find((x) => x.type === 'chapter')

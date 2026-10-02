@@ -3,6 +3,7 @@ import { EyeOff, Link2, Skull } from 'lucide-react'
 import { useAssetUrl } from '@/components/AssetImage'
 import { assetUrl } from '@/components/AssetImage'
 import { cx } from '@/components/ui'
+import { useOptionalCampaign } from '@/state/campaign'
 import type { BattleMap, MapLink, MapState, Token } from '@/types'
 
 export type MapTool = 'select' | 'reveal' | 'hide' | 'link'
@@ -501,7 +502,14 @@ const clampScale = (s: number) => Math.max(0.05, Math.min(8, s))
 function TokenView({ t, map, selected, active, player, showLabel, zoom }: { t: Token; map: BattleMap; selected: boolean; active: boolean; player: boolean; showLabel: boolean; zoom: number }) {
   const gs = map.grid.size
   const size = t.size * gs
-  const img = useAssetUrl(t.image)
+  const ctx = useOptionalCampaign()
+  // live art: explicit token image, else the source's current art (rules-entry art, campaign entry, party portrait)
+  const artId =
+    t.image ??
+    (t.refId && ctx
+      ? (ctx.campaign.refImages?.[t.refId]?.[0] ?? ctx.index.byId.get(t.refId)?.images[0] ?? ctx.campaign.party.find((m) => m.id === t.refId)?.image)
+      : undefined)
+  const img = useAssetUrl(artId)
   const dead = t.hp !== undefined && t.hp <= 0
   const hpPct = t.hp !== undefined && t.maxHp ? Math.max(0, Math.min(1, t.hp / t.maxHp)) : null
   const ring = active ? '#f0b862' : selected ? '#6aa8d8' : t.color

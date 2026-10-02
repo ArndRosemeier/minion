@@ -32,7 +32,7 @@ interface FillStore {
 }
 
 /** creation steps first (new entries), then text, then images */
-const ORDER: GapKind[] = ['links', 'encStructure', 'dungeons', 'encCreatures', 'statsCreature', 'statsNpc', 'chapters', 'summaries', 'encMaps', 'encSetup', 'mapImages', 'images']
+const ORDER: GapKind[] = ['links', 'encStructure', 'dungeons', 'encCreatures', 'statsCreature', 'statsNpc', 'chapters', 'summaries', 'encMaps', 'encSetup', 'mapImages', 'creatureArt', 'images']
 
 /** how many progress units a category contributes */
 const units = (kind: GapKind, n: number) => (kind === 'summaries' ? Math.ceil(n / 25) : kind === 'links' ? Math.ceil(n / 40) : n)
@@ -257,6 +257,27 @@ export const useFill = create<FillStore>((set, get) => {
               await updateMap(id, { image: r.asset.id, width: r.asset.width, height: r.asset.height, prompt: r.prompt, grid: { ...map.grid, size: r.gridSize, offsetX: 0, offsetY: 0 } }, ctx)
             } catch (e: any) {
               fail(cid, `Map “${map.name}”: ${e.message}`)
+            }
+            tick(cid)
+          },
+          () => stopped(cid),
+        )
+        return
+      }
+      case 'creatureArt': {
+        const { paintCreature } = await import('@/lib/creatureArt')
+        await pool(
+          ids,
+          3,
+          async (key) => {
+            const [source, ...rest] = key.split(':')
+            const id = rest.join(':')
+            const label = cat.items.find((x) => x.id === key)?.label ?? id
+            patch(cid, { progress: `Portrait: ${label}` })
+            try {
+              await paintCreature(cid, { id, name: label, source: source as 'rules' | 'campaign' }, ctx)
+            } catch (e: any) {
+              fail(cid, `${label}: ${e.message}`)
             }
             tick(cid)
           },

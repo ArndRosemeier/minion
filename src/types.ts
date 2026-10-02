@@ -206,6 +206,8 @@ export interface Campaign {
   partySize: number
   party: PartyMember[]
   coverImage?: string
+  /** campaign-specific art for read-only rules entries (refId -> asset ids, first is main) */
+  refImages?: Record<string, string[]>
   /** module builder brief */
   brief?: { scope: string; notes: string }
   /** pipeline step status (done marks) */

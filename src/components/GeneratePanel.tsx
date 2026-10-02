@@ -23,6 +23,7 @@ function estimate(type: EntityType, parts: Set<Part>, p: Prices, ctx: number, si
     const encs = Math.ceil(rooms / 2)
     if (parts.has('text') || parts.has('rooms')) c += chat(ctx + 12000, 6000 + rooms * 1200)
     if (parts.has('creatures')) c += Math.ceil(encs / 3) * chat(ctx, 2500)
+    if (parts.has('creatureArt')) c += Math.ceil(encs * 1.5) * img
     if (parts.has('map')) c += img
     if (parts.has('roomMaps')) c += encs * img
     if (parts.has('image')) c += img
@@ -32,6 +33,7 @@ function estimate(type: EntityType, parts: Set<Part>, p: Prices, ctx: number, si
   }
   if (parts.has('text') || parts.has('stats') || parts.has('encounter')) c += chat(ctx + (parts.has('encounter') ? 8000 : 0), 3500)
   if (parts.has('creatures')) c += 0.5 * chat(ctx, 2500)
+  if (parts.has('creatureArt')) c += 2 * img
   if (parts.has('map')) c += img
   if (parts.has('image')) c += img
   if (parts.has('links')) c += 2 * chat(ctx, 1500)

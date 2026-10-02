@@ -420,6 +420,7 @@ export async function garbageCollectAssets(campaignId: string) {
     }
   })
   if (camp?.coverImage) used.add(camp.coverImage)
+  Object.values(camp?.refImages ?? {}).forEach((ids) => ids.forEach((i) => used.add(i)))
   camp?.party.forEach((p) => p.image && used.add(p.image))
   const msgs = await db.messages.where('campaignId').equals(campaignId).toArray()
   msgs.forEach((m) => m.images?.forEach((i) => used.add(i)))
