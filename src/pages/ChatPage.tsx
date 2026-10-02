@@ -23,6 +23,8 @@ import { useSettings } from '@/state/settings'
 import { useUI } from '@/state/ui'
 import { toolLabel } from '@/ai/agent'
 import { Markdown, LinkChip } from '@/components/Markdown'
+import { ThinkingBlock } from '@/components/AiActivity'
+import { useActivity } from '@/state/activity'
 import { Button, ConfirmModal, IconButton, Modal, Spinner, Textarea, Toggle, cx } from '@/components/ui'
 import type { ChatMessage, ChatThread } from '@/types'
 
@@ -146,6 +148,12 @@ function ThreadView({ threadId, onToggleThreads }: { threadId: string; onToggleT
   const [advOpen, setAdvOpen] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  const showThinking = useSettings((s) => s.settings.showAiActivity !== false)
+  const setChatVisible = useActivity((s) => s.setChatVisible)
+  useEffect(() => {
+    setChatVisible(true)
+    return () => setChatVisible(false)
+  }, [setChatVisible])
 
   useEffect(() => {
     if (draft) {
@@ -157,7 +165,7 @@ function ThreadView({ threadId, onToggleThreads }: { threadId: string; onToggleT
   useEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [messages, run?.stream, run?.progress])
+  }, [messages, run?.stream, run?.progress, run?.reasoning])
 
   const submit = async () => {
     const t = text.trim()
@@ -214,6 +222,7 @@ function ThreadView({ threadId, onToggleThreads }: { threadId: string; onToggleT
           ))}
           {run && (
             <div className="space-y-2">
+              {showThinking && <ThinkingBlock text={run.reasoning} defaultOpen={!run.stream} live={!run.stream} />}
               {run.stream && <Markdown text={run.stream} />}
               <div className="flex items-center gap-2 text-sm text-muted">
                 <Spinner className="size-4" />

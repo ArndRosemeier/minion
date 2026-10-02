@@ -14,6 +14,7 @@ import { CampaignSettingsPage } from './pages/CampaignSettingsPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { RulesPage } from './pages/RulesPage'
 import { Toasts } from './components/Toasts'
+import { AiActivity } from './components/AiActivity'
 
 const router = createHashRouter([
   { path: '/', element: <HomePage /> },
@@ -45,6 +46,7 @@ export function App() {
     <>
       <RouterProvider router={router} />
       <Toasts />
+      <AiActivity />
     </>
   )
 }

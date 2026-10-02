@@ -152,6 +152,7 @@ async function design(campaign: Campaign, base: Partial<Entity>, size: keyof typ
     .filter(Boolean)
     .join('\n')
   const { data } = await chatJson<Design>({
+    label: `Designing dungeon: ${base.name || 'new'}`,
     model: s.chatModel,
     temperature: 0.85,
     signal,

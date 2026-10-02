@@ -1,4 +1,5 @@
 import { getSettings } from '@/state/settings'
+import { activity } from '@/state/activity'
 
 const BASE = 'https://openrouter.ai/api/v1'
 
@@ -30,6 +31,8 @@ export interface ORModel {
 
 export interface ChatResult {
   content: string
+  /** model reasoning ("thinking"), if the model exposes it */
+  reasoning?: string
   toolCalls: { id: string; name: string; arguments: string }[]
   cost?: number
   finishReason?: string
@@ -91,10 +94,37 @@ export interface ChatOptions {
   json?: boolean
   signal?: AbortSignal
   onDelta?: (text: string) => void
+  onReasoning?: (text: string) => void
+  /** what this call does, shown in the AI activity overlay */
+  label?: string
+  /** campaign chat calls are shown inline in the chat view */
+  source?: 'chat'
 }
 
-/** Streaming chat completion with tool-call support. */
+/** Streaming chat completion with tool-call support; reported to the AI activity overlay. */
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
+  const id = activity.start({ label: opts.label ?? 'AI', model: opts.model, kind: 'text', source: opts.source })
+  try {
+    const r = await chatStream({
+      ...opts,
+      onDelta: (t) => {
+        activity.update(id, { content: t })
+        opts.onDelta?.(t)
+      },
+      onReasoning: (t) => {
+        activity.update(id, { reasoning: t })
+        opts.onReasoning?.(t)
+      },
+    })
+    activity.finish(id)
+    return r
+  } catch (e: any) {
+    activity.finish(id, e?.name === 'AbortError' ? 'stopped' : (e?.message ?? String(e)))
+    throw e
+  }
+}
+
+async function chatStream(opts: ChatOptions): Promise<ChatResult> {
   const body: Record<string, unknown> = {
     model: opts.model,
     messages: opts.messages,
@@ -119,6 +149,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   const decoder = new TextDecoder()
   let buf = ''
   let content = ''
+  let reasoning = ''
   let cost: number | undefined
   let finishReason: string | undefined
   const calls: Record<number, { id: string; name: string; arguments: string }> = {}
@@ -146,6 +177,12 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       if (!choice) continue
       if (choice.finish_reason) finishReason = choice.finish_reason
       const d = choice.delta || {}
+      // reasoning arrives as plain text or as structured reasoning details, depending on the provider
+      const think = typeof d.reasoning === 'string' ? d.reasoning : Array.isArray(d.reasoning_details) ? d.reasoning_details.map((r: any) => r?.text ?? r?.summary ?? '').join('') : ''
+      if (think) {
+        reasoning += think
+        opts.onReasoning?.(reasoning)
+      }
       if (d.content) {
         content += d.content
         opts.onDelta?.(content)
@@ -160,7 +197,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
     }
   }
   const toolCalls = Object.values(calls).map((c, i) => ({ ...c, id: c.id || `call_${i}_${Date.now()}` }))
-  return { content, toolCalls, cost, finishReason }
+  return { content, reasoning: reasoning || undefined, toolCalls, cost, finishReason }
 }
 
 /** Non-tool chat that must return a JSON object. Retries parsing leniently. */
@@ -187,11 +224,26 @@ export interface ImageOptions {
   /** data URLs of reference images (image-to-image, consistency) */
   inputImages?: string[]
   signal?: AbortSignal
+  /** what is being painted, shown in the AI activity overlay */
+  label?: string
 }
 
 /** Generate an image through an OpenRouter image-capable chat model. Returns data URLs. */
 export async function generateImage(opts: ImageOptions): Promise<{ images: string[]; text: string; cost?: number }> {
   const model = opts.model || getSettings().imageModel
+  const act = activity.start({ label: opts.label ?? 'Painting', model, kind: 'image', content: opts.prompt })
+  try {
+    const r = await generateImageInner({ ...opts, model })
+    activity.finish(act)
+    return r
+  } catch (e: any) {
+    activity.finish(act, e?.message ?? String(e))
+    throw e
+  }
+}
+
+async function generateImageInner(opts: ImageOptions & { model: string }): Promise<{ images: string[]; text: string; cost?: number }> {
+  const model = opts.model
   const content: ContentPart[] = [{ type: 'text', text: opts.prompt }]
   for (const url of opts.inputImages || []) content.push({ type: 'image_url', image_url: { url } })
   const body: Record<string, unknown> = {

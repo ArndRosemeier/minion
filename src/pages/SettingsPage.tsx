@@ -114,6 +114,11 @@ export function SettingsPage() {
       <Card className="space-y-4 p-5">
         <h2 className="font-display text-lg">Reading & play</h2>
         <Toggle checked={settings.autoLink} onChange={(autoLink) => update({ autoLink })} label="Auto-link names of campaign entries in text" />
+        <Toggle
+          checked={settings.showAiActivity !== false}
+          onChange={(showAiActivity) => update({ showAiActivity })}
+          label="Show the AI’s thinking and writing live while it works"
+        />
         <Field label="Dice color">
           <input type="color" value={settings.diceColor} onChange={(e) => update({ diceColor: e.target.value })} className="h-10 w-20 rounded-lg border border-line bg-surface-2" />
         </Field>

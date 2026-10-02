@@ -8,6 +8,7 @@ import { toast } from './ui'
 interface RunState {
   threadId: string
   stream: string
+  reasoning: string
   progress: string
   kind: 'agent' | 'advisors'
   controller: AbortController
@@ -35,7 +36,7 @@ export const useAgentRun = create<AgentRunStore>((set, get) => {
     send: async (campaignId, threadId, text, opts) => {
       if (get().runs[threadId]) return null
       const controller = new AbortController()
-      set((s) => ({ runs: { ...s.runs, [threadId]: { threadId, stream: '', progress: 'Thinking…', kind: 'agent', controller } } }))
+      set((s) => ({ runs: { ...s.runs, [threadId]: { threadId, stream: '', reasoning: '', progress: 'Thinking…', kind: 'agent', controller } } }))
       try {
         if (text.trim()) {
           const m: ChatMessage = { id: newId('m'), campaignId, threadId, role: 'user', content: text, createdAt: Date.now() }
@@ -48,6 +49,7 @@ export const useAgentRun = create<AgentRunStore>((set, get) => {
           threadId,
           {
             onStream: (stream) => patch(threadId, { stream, progress: stream ? '' : get().runs[threadId]?.progress }),
+            onReasoning: (reasoning) => patch(threadId, { reasoning }),
             onProgress: (progress) => patch(threadId, { progress }),
           },
           controller.signal,
@@ -67,7 +69,7 @@ export const useAgentRun = create<AgentRunStore>((set, get) => {
     advise: async (campaignId, threadId, question, advisors) => {
       if (get().runs[threadId]) return
       const controller = new AbortController()
-      set((s) => ({ runs: { ...s.runs, [threadId]: { threadId, stream: '', progress: 'Asking the advisors…', kind: 'advisors', controller } } }))
+      set((s) => ({ runs: { ...s.runs, [threadId]: { threadId, stream: '', reasoning: '', progress: 'Asking the advisors…', kind: 'advisors', controller } } }))
       try {
         if (question?.trim()) {
           await db.messages.add({ id: newId('m'), campaignId, threadId, role: 'user', content: `🗣️ To the advisors: ${question}`, createdAt: Date.now() })

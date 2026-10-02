@@ -77,6 +77,7 @@ export function historyToMessages(history: ChatMessage[]): ORMessage[] {
 
 export interface AgentCallbacks {
   onStream?: (text: string) => void
+  onReasoning?: (text: string) => void
   onProgress?: (text: string) => void
   onMessage?: (m: ChatMessage) => void
 }
@@ -108,7 +109,7 @@ export async function runAgentTurn(
       ...historyToMessages(history),
     ]
     const model = opts.model || settings.chatModel
-    const res = await chat({ model, messages, tools, signal, onDelta: cb.onStream, temperature: 0.7 })
+    const res = await chat({ model, messages, tools, signal, onDelta: cb.onStream, onReasoning: cb.onReasoning, temperature: 0.7, label: 'Campaign chat', source: 'chat' })
     const msg: ChatMessage = {
       id: newId('m'),
       campaignId,
@@ -229,6 +230,7 @@ export async function consultAdvisors(
     list.map(async (a) => {
       try {
         const r = await chat({
+          label: `Advisor: ${a.name}`,
           model: a.model || settings.fastModel,
           signal,
           temperature: 0.7,

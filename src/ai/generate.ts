@@ -36,6 +36,7 @@ export async function generateEntityData(
     .filter(Boolean)
     .join('\n')
   const { data } = await chatJson<Partial<Entity>>({
+    label: `Writing ${req.type}${req.name ? `: ${req.name}` : ''}`,
     model: req.fast ? s.fastModel : s.chatModel,
     messages: [
       { role: 'system', content: sys },
@@ -90,6 +91,7 @@ Hard requirements to include in the prompt: strict top-down orthographic view (s
 Be organic and specific: describe terrain, materials, light, clutter, paths, cover, elevation cues, water, vegetation, furniture, debris — whatever fits. Do NOT default to rectangular rooms; follow the description. If it is a dungeon/complex, describe its layout concretely (chambers, passages, natural caves, ruins...) as it fits the place.`
       : `Write a prompt for an image model to create an evocative illustration for a tabletop RPG (character portrait, place, scene or item as fits). No text or letters in the image.`
   const r = await chat({
+    label: kind === 'battlemap' ? 'Writing map prompt' : 'Writing image prompt',
     model: s.fastModel,
     messages: [
       {
@@ -114,6 +116,7 @@ export async function generateIllustration(
 ): Promise<Asset> {
   const prompt = opts.promptOverride || (await writeImagePrompt(campaign, subject, 'illustration', opts.direction))
   const { images } = await generateImage({
+    label: `Painting: ${subject.split('\n')[0].replace(/^[A-Z]+: /, '').slice(0, 60)}`,
     prompt: `${prompt}\nStyle: ${campaign.artStyle}`,
     aspectRatio: opts.aspectRatio ?? '4:3',
     inputImages: opts.reference,
@@ -181,6 +184,7 @@ export async function generateBattlemapImage(
     .filter(Boolean)
     .join('\n')
   const { images } = await generateImage({
+    label: `Painting map: ${description.split('\n')[0].slice(0, 60)}`,
     prompt: `${prompt}\nStyle: ${campaign.artStyle}`,
     aspectRatio: aspect,
     inputImages: opts.reference ? [opts.reference] : undefined,
@@ -199,6 +203,7 @@ export async function generateBattlemapImage(
 export async function generateStatBlock(campaign: Campaign, e: Entity): Promise<NonNullable<Entity['stats']>> {
   const s = getSettings()
   const { data } = await chatJson<{ stats: unknown }>({
+    label: `Stat block: ${e.name}`,
     model: s.chatModel,
     temperature: 0.4,
     messages: [
@@ -228,6 +233,7 @@ export async function generateSummaries(campaign: Campaign, entities: Entity[]):
   const s = getSettings()
   const items = entities.map((e) => ({ id: e.id, type: e.type, name: e.name, text: clip(`${e.body}\n${e.secrets ?? ''}`, 1200) }))
   const { data } = await chatJson<Record<string, string>>({
+    label: `Summaries (${entities.length})`,
     model: s.fastModel,
     temperature: 0.3,
     messages: [

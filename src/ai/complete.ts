@@ -192,6 +192,7 @@ export async function createMissingLinks(campaign: Campaign, entityIds: string[]
   // classify in one cheap call
   const types = Object.keys(ENTITY_TYPES).filter((t) => t !== 'note' && t !== 'chapter')
   const { data } = await chatJson<Record<string, string>>({
+    label: 'Sorting missing entries',
     model: getSettings().fastModel,
     temperature: 0,
     messages: [
@@ -332,6 +333,7 @@ export async function completeEntity(
         .filter(Boolean)
         .join('\n')
       const { data } = await chatJson<any>({
+        label: `Writing ${ENTITY_TYPES[type].label}: ${base.name || 'new'}`,
         model: s.chatModel,
         temperature: 0.8,
         signal: opts.signal,

@@ -414,6 +414,8 @@ export interface AppSettings {
   diceColor: string
   /** 'full' = send everything when small enough, 'index' = index + lookups */
   contextMode: 'auto' | 'full' | 'index'
+  /** show the live AI activity overlay automatically (default on) */
+  showAiActivity?: boolean
   /** recently used models, most recent first */
   recentModels?: { chat: string[]; image: string[] }
 }
