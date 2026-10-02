@@ -115,16 +115,14 @@ async function findOrCreateBuilderThread(campaignId: string): Promise<string> {
 
 const IMAGE_TYPES: Entity['type'][] = ['npc', 'location', 'dungeon', 'chapter', 'creature', 'item', 'faction']
 
-const WRITE_CHAPTER = (ch: Entity) =>
-  `Write chapter “${ch.name}” (id ${ch.id}) and all its scenes out in full, playable detail: read-aloud boxes ("> "), what happens and why, NPC lines and reactions, skill checks with DCs (for the chapter's party level), clues, treasure by level (official items linked), level-ups where they happen, consequences and transitions to the next chapter. Keep the existing structure, expand and improve it. Link every rules element and entry with [[ ]]. Finish by adding the tag "written" to the chapter (update_entity tags).
-
-PARALLEL WRITING: other chapters are being written at the same time. Do NOT create new NPCs, locations, creatures, items, encounters or other entries in this step (they would be duplicated) — only edit this chapter and its scenes. Reference anything that is still missing with a [[Name]] link; missing entries are created automatically afterwards.`
+const WRITE_CHAPTER = (ch: Entity, i: number, n: number) =>
+  `Write chapter ${i + 1} of ${n}, “${ch.name}” (id ${ch.id}), and all its scenes out in full, playable detail: read-aloud boxes ("> "), what happens and why, NPC lines and reactions, skill checks with DCs (for the chapter's party level), clues, treasure by level (official items linked), level-ups where they happen, consequences and transitions to the next chapter. Build on the chapters written before this one — pick up their threads, NPCs and consequences. Keep the existing structure, expand and improve it. Create entries this chapter needs that don't exist yet. Link every rules element and entry with [[ ]]. Finish by adding the tag "written" to the chapter (update_entity tags).`
 
 /**
- * Write chapters in parallel: one background agent run per chapter in its own temporary thread
- * (deleted on success). Missing entries referenced by the chapters are created once afterwards.
+ * Write chapters one after another in the builder thread, so each chapter sees the finished
+ * previous ones (story coherence matters more than speed here).
  */
-export async function writeChaptersParallel(
+export async function writeChapters(
   c: Campaign,
   chapterIds: string[],
   onProgress: (msg: string) => void,
@@ -132,31 +130,19 @@ export async function writeChaptersParallel(
 ): Promise<{ batches: string[]; errors: string[] }> {
   const batches: string[] = []
   const errors: string[] = []
-  let n = 0
-  await Promise.all(
-    chapterIds.map(async (id) => {
-      if (shouldStop()) return
-      const ch = await db.entities.get(id)
-      if (!ch) return
-      const t: ChatThread = { id: newId('th'), campaignId: c.id, title: `Builder: ${ch.name}`, createdAt: Date.now(), updatedAt: Date.now() }
-      await db.threads.add(t)
-      const b = await useAgentRun.getState().send(c.id, t.id, stepPrompt('write', c, WRITE_CHAPTER(ch)), { background: true, label: `Writing chapter: ${ch.name}` })
-      if (b) {
-        batches.push(b)
-        await db.messages.where('threadId').equals(t.id).delete()
-        await db.threads.delete(t.id)
-      } else errors.push(ch.name)
-      onProgress(`${++n}/${chapterIds.length} chapters written`)
-    }),
-  )
-  // entries the chapters link to but that don't exist yet — created once, no duplicates
-  if (!shouldStop() && batches.length) {
-    const { createMissingLinks } = await import('@/ai/complete')
-    const scenes = (await db.entities.where({ campaignId: c.id, type: 'scene' }).toArray()).filter((s) => s.parentId && chapterIds.includes(s.parentId))
-    onProgress('Creating entries the chapters link to…')
-    const ctx = { batchId: newId('b'), source: 'ai' as const }
-    await createMissingLinks(c, [...chapterIds, ...scenes.map((s) => s.id)], ctx, onProgress)
-    batches.push(ctx.batchId)
+  const thread = await builderThread(c.id)
+  for (const [i, id] of chapterIds.entries()) {
+    if (shouldStop()) break
+    const ch = await db.entities.get(id)
+    if (!ch) continue
+    onProgress(`Writing chapter ${i + 1}/${chapterIds.length}: ${ch.name}`)
+    const fresh = (await db.campaigns.get(c.id)) ?? c
+    const b = await useAgentRun.getState().send(c.id, thread, stepPrompt('write', fresh, WRITE_CHAPTER(ch, i, chapterIds.length)), {
+      background: true,
+      label: `Writing chapter: ${ch.name}`,
+    })
+    if (b) batches.push(b)
+    else errors.push(ch.name)
   }
   return { batches, errors }
 }
@@ -219,8 +205,7 @@ export const useBuilder = create<BuilderStore>((set, get) => {
     if (step.id === 'write') {
       const chapters = (await db.entities.where({ campaignId: cid, type: 'chapter' }).toArray()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       const todo = fresh.brief?.scope === 'extend' ? chapters.filter((c) => !c.tags.includes('written')) : chapters
-      patch(cid, { progress: `Writing ${todo.length} chapters in parallel…` })
-      const r = await writeChaptersParallel(
+      const r = await writeChapters(
         fresh,
         todo.map((c) => c.id),
         (msg) => patch(cid, { progress: msg }),

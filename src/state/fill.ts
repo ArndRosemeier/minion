@@ -4,7 +4,7 @@ import { createEntity, createMap, undoBatch, updateEntity, updateMap, type Chang
 import { newId } from '@/lib/id'
 import { normalizeName } from '@/compendium/compendium'
 import { generateBattlemapImage, generateEntityData, generateStatBlock, generateSummaries, illustrateEntities } from '@/ai/generate'
-import { pool, stepPrompt, useBuilder, writeChaptersParallel } from './builder'
+import { pool, stepPrompt, useBuilder, writeChapters } from './builder'
 import { seedEncounterMap } from '@/lib/encounterSetup'
 import { useAgentRun } from './agentRun'
 import type { GapCategory, GapKind } from '@/lib/gaps'
@@ -165,11 +165,23 @@ export const useFill = create<FillStore>((set, get) => {
         return
       }
       case 'chapters': {
-        patch(cid, { progress: `Writing ${ids.length} chapters in parallel…` })
-        const r = await writeChaptersParallel(campaign, ids, (msg) => patch(cid, { progress: msg }), () => stopped(cid))
+        // in story order, one after another, so each chapter builds on the previous ones
+        const ordered = (await db.entities.bulkGet(ids)).filter((e): e is Entity => !!e).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        let started = 0
+        const r = await writeChapters(
+          campaign,
+          ordered.map((e) => e.id),
+          (msg) => {
+            // a new chapter starting means the previous one is done
+            if (started++) tick(cid)
+            patch(cid, { progress: msg })
+          },
+          () => stopped(cid),
+        )
+        if (started) tick(cid)
+        for (let i = started; i < ids.length; i++) tick(cid)
         r.batches.forEach((b) => addBatch(cid, b))
         r.errors.forEach((name) => fail(cid, `Chapter not written: ${name}`))
-        for (let i = 0; i < ids.length; i++) tick(cid)
         return
       }
       case 'summaries': {
