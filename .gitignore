@@ -3,3 +3,7 @@ dist
 *.local
 .DS_Store
 tsconfig.tsbuildinfo
+
+# duplicate copies created by @3d-dice/dice-box postinstall (the app uses public/assets/dice-box)
+public/assets/ammo
+public/assets/themes
