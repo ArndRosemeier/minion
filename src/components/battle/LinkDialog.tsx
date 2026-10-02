@@ -3,25 +3,11 @@ import { ImagePlus, Trash2 } from 'lucide-react'
 import { useCampaign } from '@/state/campaign'
 import { createMap, updateMap, userCtx } from '@/db/repo'
 import { generateBattlemapImage } from '@/ai/generate'
-import { assetUrl } from '@/components/AssetImage'
+import { cropToDataUrl } from '@/lib/mapImage'
 import { newId } from '@/lib/id'
 import { toast } from '@/state/ui'
 import { Button, Field, Input, Modal, Segmented, Select, Textarea, Toggle } from '@/components/ui'
 import type { BattleMap, MapLink } from '@/types'
-
-async function cropToDataUrl(assetId: string, r: { x: number; y: number; w: number; h: number }): Promise<string | undefined> {
-  const url = await assetUrl(assetId)
-  if (!url) return undefined
-  const img = new Image()
-  img.src = url
-  await img.decode()
-  const scale = Math.min(1, 1024 / Math.max(r.w, r.h))
-  const c = document.createElement('canvas')
-  c.width = Math.round(r.w * scale)
-  c.height = Math.round(r.h * scale)
-  c.getContext('2d')!.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height)
-  return c.toDataURL('image/jpeg', 0.85)
-}
 
 /** Create or edit a link region: point to an existing map or create (and paint) a sub-map. */
 export function LinkDialog({
@@ -85,7 +71,7 @@ export function LinkDialog({
           await updateMap(sub.id, { image: r.asset.id, width: r.asset.width, height: r.asset.height, prompt: r.prompt, grid: { ...sub.grid, size: r.gridSize } })
         }
       }
-      const l: MapLink = { id: existing?.id ?? newId('lnk'), x: link.x, y: link.y, w: link.w, h: link.h, label: label || 'Area', targetMapId }
+      const l: MapLink = { id: existing?.id ?? newId('lnk'), x: link.x, y: link.y, w: link.w, h: link.h, label: label || 'Area', targetMapId, locationId: existing?.locationId }
       const links = existing ? map.links.map((x) => (x.id === l.id ? l : x)) : [...map.links, l]
       await updateMap(map.id, { links }, userCtx())
       onClose()

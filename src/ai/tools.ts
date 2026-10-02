@@ -13,6 +13,7 @@ import { loadCompendium, normalizeName, searchRefs, findRef } from '@/compendium
 import { newId } from '@/lib/id'
 import { ENTITY_TYPES } from '@/lib/entityTypes'
 import { generateBattlemapImage, illustrateEntity, sanitizeEntityData } from './generate'
+import { seedEncounterMap } from '@/lib/encounterSetup'
 import { entityFull, entityIndexLine } from './prompts'
 import type { ORTool } from './openrouter'
 import type { Campaign, Entity, EntityType, PartyMember, RefCategory } from '@/types'
@@ -232,6 +233,33 @@ export const TOOLS: ORTool[] = [
     },
   },
 ]
+
+TOOLS.push({
+  type: 'function',
+  function: {
+    name: 'generate_complete',
+    description:
+      'Fully generate (or complete) one entry with ALL its parts in one go, exactly like the GM\'s "Generate" button: text, stat block, structured encounter creatures (official stat blocks or new homebrew creatures with full stats), painted battle map with creatures placed, illustration, and entries for missing links. For type "dungeon" it designs the whole site: rooms/caves of any shape, passages, room encounters, an overview map painted from the floor plan with clickable areas, detailed room maps. Slow and uses image generation — use it when the GM wants something finished, especially encounters and dungeons.',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ENTITY_TYPE_LIST },
+        id: { type: 'string', description: 'id or exact name of an existing entry to complete (omit to create a new one)' },
+        name: { type: 'string' },
+        summary: { type: 'string' },
+        instructions: { type: 'string', description: 'what it should be like' },
+        parts: {
+          type: 'array',
+          items: { type: 'string', enum: ['text', 'stats', 'encounter', 'creatures', 'map', 'image', 'links', 'rooms', 'roomMaps', 'roomImages'] },
+          description: 'which parts to generate; default: all parts that apply to the type',
+        },
+        size: { type: 'string', enum: ['small', 'medium', 'large'], description: 'dungeon size' },
+        parent: { type: 'string', description: 'id or name of the parent entry (e.g. the location of an encounter)' },
+      },
+      required: ['type'],
+    },
+  },
+})
 
 export const ADVISOR_TOOL: ORTool = {
   type: 'function',
@@ -457,7 +485,8 @@ export async function executeTool(name: string, argsJson: string, env: ToolEnv):
           env.ctx,
         )
       }
-      return ok({ map: map.id, image: !!map.image })
+      const placed = encounter ? await seedEncounterMap(map.id, env.ctx) : 0
+      return ok({ map: map.id, image: !!map.image, tokensPlaced: placed })
     }
     case 'update_battlemap': {
       const map = await findMap(env.campaignId, args.id)
@@ -478,6 +507,29 @@ export async function executeTool(name: string, argsJson: string, env: ToolEnv):
       }
       await updateMap(map.id, patch, env.ctx)
       return ok({ updated: map.id })
+    }
+    case 'generate_complete': {
+      const { completeEntity, partsFor } = await import('./complete')
+      const list = await allEntities(env.campaignId)
+      const type = (ENTITY_TYPE_LIST.includes(args.type) ? args.type : 'note') as EntityType
+      const target = args.id ? findByRef(list, args.id) : undefined
+      const all = partsFor(type)
+      const wanted = Array.isArray(args.parts) && args.parts.length ? all.filter((x) => args.parts.includes(x)) : all
+      const parent = findByRef(list, args.parent)
+      const log: string[] = []
+      const id = await completeEntity(
+        campaign,
+        { type, id: target?.id, draft: { name: args.name ?? target?.name, summary: args.summary ?? target?.summary, parentId: parent?.id ?? target?.parentId } },
+        new Set(wanted),
+        { instructions: args.instructions, size: args.size },
+        (step, patch) => {
+          if (patch.detail) env.onProgress?.(`${step}: ${patch.detail}`)
+          if (patch.status === 'done' || patch.status === 'error') log.push(`${step}: ${patch.status}${patch.detail ? ' — ' + patch.detail : ''}`)
+        },
+        env.ctx,
+      )
+      const e = await db.entities.get(id)
+      return ok({ id, name: e?.name, steps: log })
     }
     case 'consult_advisors': {
       if (!env.consultAdvisors) return 'Advisors unavailable.'

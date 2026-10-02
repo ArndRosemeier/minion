@@ -20,10 +20,12 @@ import { ENTITY_TYPE_ORDER, ENTITY_TYPES, REF_TYPES, UNRESOLVED_META } from '@/l
 import { Markdown, LinkChip } from './Markdown'
 import { StatBlockView } from './StatBlockView'
 import { AssetImage } from './AssetImage'
-import { Button, ConfirmModal, cx, IconButton, Select, Textarea } from './ui'
-import { createEntity, deleteEntity, userCtx } from '@/db/repo'
-import { generateEntityData, illustrateEntity } from '@/ai/generate'
+import { Button, ConfirmModal, cx, IconButton, Select } from './ui'
+import { deleteEntity, updateEntity, userCtx } from '@/db/repo'
+import { illustrateEntity } from '@/ai/generate'
 import { useEditor } from './EntityEditor'
+import { GeneratePanel } from './GeneratePanel'
+import { db } from '@/db/db'
 import { useBattle } from '@/state/battle'
 import type { Entity, EntityType, RefEntry } from '@/types'
 import type { LinkTarget } from '@/lib/links'
@@ -147,6 +149,9 @@ function EntityDetail({ entity: e }: { entity: Entity }) {
         <Button size="sm" icon={<Pencil className="size-4" />} onClick={() => openEditor({ id: e.id })}>
           Edit
         </Button>
+        <Button size="sm" icon={<Wand2 className="size-4" />} onClick={() => openEditor({ id: e.id })} title="Generate missing parts (text, stats, creatures, maps, images…)">
+          AI complete
+        </Button>
         <Button
           size="sm"
           icon={<MonitorPlay className="size-4" />}
@@ -183,6 +188,8 @@ function EntityDetail({ entity: e }: { entity: Entity }) {
       {e.body && <Markdown text={e.body} selfName={e.name} />}
 
       {e.encounter && <EncounterBlock entity={e} />}
+
+      {e.type === 'dungeon' && <DungeonBlock entity={e} />}
 
       {e.stats && <StatBlockView stats={e.stats} system={campaign.system} name={e.name} />}
 
@@ -298,6 +305,57 @@ function EncounterBlock({ entity: e }: { entity: Entity }) {
   )
 }
 
+function DungeonBlock({ entity: e }: { entity: Entity }) {
+  const { index, maps } = useCampaign()
+  const openMap = useBattle((s) => s.openMap)
+  const openEditor = useEditor((s) => s.open)
+  const d = e.dungeon
+  const overview = d?.mapId ? maps.find((m) => m.id === d.mapId) : undefined
+  const rooms = [...(d?.rooms ?? [])].sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }))
+  if (!rooms.length && !overview)
+    return (
+      <div className="rounded-xl border border-dashed border-line-strong p-4 text-sm text-muted">
+        This dungeon has no rooms or map yet.{' '}
+        <button className="text-accent underline" onClick={() => openEditor({ id: e.id })}>
+          Generate it with AI
+        </button>{' '}
+        — rooms, encounters, floor plan and maps.
+      </div>
+    )
+  return (
+    <div className="space-y-3 rounded-xl border border-line bg-surface-2 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-semibold tracking-wider text-faint uppercase">{rooms.length} areas</div>
+        {overview && (
+          <Button size="sm" variant="primary" icon={<Swords className="size-4" />} onClick={() => openMap(overview.id)}>
+            Open dungeon map
+          </Button>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        {rooms.map((r) => {
+          const loc = index.byId.get(r.locationId)
+          const enc = r.encounterId ? index.byId.get(r.encounterId) : undefined
+          const roomMap = r.mapId ? maps.find((m) => m.id === r.mapId) : undefined
+          if (!loc) return null
+          return (
+            <div key={r.key} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="w-8 shrink-0 text-right font-display text-accent">{r.key}</span>
+              <LinkChip target={`id:${loc.id}`}>{loc.name}</LinkChip>
+              {enc && <LinkChip target={`id:${enc.id}`}>{enc.name}</LinkChip>}
+              {roomMap && (
+                <button className="text-xs text-sky-400 hover:underline" onClick={() => openMap(roomMap.id)}>
+                  map
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function RefDetail({ entry: r }: { entry: RefEntry }) {
   const { campaign } = useCampaign()
   const openEditor = useEditor((s) => s.open)
@@ -377,54 +435,51 @@ function RefDetail({ entry: r }: { entry: RefEntry }) {
 }
 
 function UnresolvedDetail({ name, hint }: { name: string; hint?: string }) {
-  const { campaign, entities } = useCampaign()
+  const { entities } = useCampaign()
   const openEditor = useEditor((s) => s.open)
   const openDetail = useUI((s) => s.openDetail)
   const popDetail = useUI((s) => s.popDetail)
   const guess: EntityType = (hint && (ENTITY_TYPES as Record<string, unknown>)[hint] ? hint : hint === 'monster' ? 'creature' : hint === 'condition' || hint === 'action' || hint === 'trait' ? 'rule' : 'npc') as EntityType
   const [type, setType] = useState<EntityType>(guess)
-  const [instructions, setInstructions] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const generate = async () => {
-    setBusy(true)
-    try {
-      const data = await generateEntityData(campaign, entities, { type, name, instructions, withStats: type === 'creature' })
-      const ent = await createEntity(campaign.id, type, { ...data, name: data.name || name, aliases: data.name && data.name !== name ? [name, ...(data.aliases || [])] : data.aliases }, userCtx())
-      popDetail()
-      openDetail({ kind: 'entity', id: ent.id })
-      toast(`Created ${ENTITY_TYPES[type].label} “${ent.name}”`, 'success')
-    } catch (err: any) {
-      toast(err.message, 'error')
-    } finally {
-      setBusy(false)
-    }
-  }
+  const usedIn = useMemo(() => {
+    const n = name.toLowerCase()
+    return entities.filter((e) => `${e.body}\n${e.secrets ?? ''}`.toLowerCase().includes(`[[${n}`)).map((e) => e.name)
+  }, [entities, name])
+  const context = `Keep the name “${name}”.${usedIn.length ? ` It is referenced as [[${name}]] in: ${usedIn.slice(0, 5).join(', ')} — make it fit there.` : ''}`
 
   return (
     <div className="space-y-5 p-5">
       <Header icon={UNRESOLVED_META.icon} color="var(--color-muted)" label="Not found" title={name} />
       <p className="text-sm text-muted">
-        “{name}” is neither in this campaign nor in the bundled rules reference. Create it — by hand, or let the AI write it (homebrew).
+        “{name}” is neither in this campaign nor in the bundled rules reference{usedIn.length ? ` (used in ${usedIn.slice(0, 3).join(', ')})` : ''}. Create it by hand, or let
+        the AI build it completely.
       </p>
-      <div className="space-y-3 rounded-xl border border-line bg-surface-2 p-4">
-        <Select value={type} onChange={(e) => setType(e.target.value as EntityType)}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={type} onChange={(e) => setType(e.target.value as EntityType)} className="w-48">
           {ENTITY_TYPE_ORDER.map((t) => (
             <option key={t} value={t}>
               {ENTITY_TYPES[t].label}
             </option>
           ))}
         </Select>
-        <Textarea minRows={2} placeholder="Optional instructions for the AI…" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
-        <div className="flex flex-wrap gap-2">
-          <Button variant="primary" icon={<Wand2 className="size-4" />} loading={busy} onClick={generate}>
-            Generate with AI
-          </Button>
-          <Button icon={<Plus className="size-4" />} onClick={() => openEditor({ draft: { type, name } })}>
-            Create manually
-          </Button>
-        </div>
+        <Button icon={<Plus className="size-4" />} onClick={() => openEditor({ draft: { type, name } })}>
+          Create manually
+        </Button>
       </div>
+      <GeneratePanel
+        key={type}
+        type={type}
+        getDraft={() => ({ name })}
+        context={context}
+        onDone={async (id) => {
+          // keep the link working even if the AI chose a different name
+          const e = await db.entities.get(id)
+          if (e && e.name.toLowerCase() !== name.toLowerCase() && !e.aliases.some((x) => x.toLowerCase() === name.toLowerCase()))
+            await updateEntity(id, { aliases: [name, ...e.aliases] })
+          popDetail()
+          openDetail({ kind: 'entity', id })
+        }}
+      />
     </div>
   )
 }

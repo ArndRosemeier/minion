@@ -4,6 +4,7 @@ import { ImagePlus, Map as MapIcon, Plus, Swords, Upload } from 'lucide-react'
 import { useCampaign } from '@/state/campaign'
 import { createMap, saveAsset, updateEntity, updateMap, userCtx } from '@/db/repo'
 import { generateBattlemapImage } from '@/ai/generate'
+import { seedEncounterMap } from '@/lib/encounterSetup'
 import { toast } from '@/state/ui'
 import { AssetImage } from '@/components/AssetImage'
 import { Button, Empty, Field, Input, Modal, Segmented, Select, Textarea } from '@/components/ui'
@@ -107,6 +108,7 @@ function NewMapModal({ open, onClose, onCreated }: { open: boolean; onClose: () 
         const r = await generateBattlemapImage(campaign, description, { cols, rows })
         map = await updateMap(map.id, { image: r.asset.id, width: r.asset.width, height: r.asset.height, prompt: r.prompt, grid: { ...map.grid, size: r.gridSize } })
       }
+      if (enc) await seedEncounterMap(map.id)
       onClose()
       onCreated(map.id)
     } catch (e: any) {

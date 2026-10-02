@@ -119,6 +119,7 @@ export type EntityType =
   | 'chapter'
   | 'scene'
   | 'location'
+  | 'dungeon'
   | 'npc'
   | 'creature'
   | 'faction'
@@ -156,6 +157,16 @@ export interface Entity {
   order?: number
   /** scene -> chapter, sub-location -> location */
   parentId?: string
+  /** dungeon specifics (rooms are locations with parentId = dungeon) */
+  dungeon?: {
+    /** overview battle map */
+    mapId?: string
+    /** floor plan size in 5-ft squares */
+    cols?: number
+    rows?: number
+    rooms?: DungeonRoom[]
+    passages?: { from: string; to: string; points: [number, number][]; width: number }[]
+  }
   /** encounter specifics */
   encounter?: {
     creatures: EncounterCreature[]
@@ -244,6 +255,16 @@ export interface Token {
   label?: string
 }
 
+export interface DungeonRoom {
+  /** short key like "A1" */
+  key: string
+  locationId: string
+  /** outline polygon in squares on the overview map */
+  shape: [number, number][]
+  encounterId?: string
+  mapId?: string
+}
+
 export interface MapLink {
   id: string
   /** rectangle in image pixels */
@@ -253,6 +274,8 @@ export interface MapLink {
   h: number
   label: string
   targetMapId?: string
+  /** location (room) described by this area */
+  locationId?: string
 }
 
 export interface MapState {
@@ -293,6 +316,8 @@ export interface BattleMap {
   links: MapLink[]
   /** the prompt used to generate the image */
   prompt?: string
+  /** encounter creatures/party were auto-placed once (never re-placed automatically) */
+  seeded?: boolean
   initialState: MapState
   state: MapState
   createdAt: number

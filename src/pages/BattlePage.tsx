@@ -3,6 +3,10 @@ import { useNavigate, useParams } from 'react-router'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   ArrowLeft,
+  BookOpen,
+  Footprints,
+  LogIn,
+  Pencil,
   Brush,
   ChevronRight,
   Dices,
@@ -33,9 +37,11 @@ import { LinkDialog } from '@/components/battle/LinkDialog'
 import { CreaturePicker } from '@/components/CreaturePicker'
 import { QuickNpcModal } from '@/components/QuickNpc'
 import { enterFullscreen, exitFullscreen } from '@/components/Showcase'
-import { applyHp, cols, initiativeOrder, nextTurn, rows, tokenFromMember, tokenFromStats } from '@/lib/mapOps'
+import { applyHp, cols, freeCellNear, initiativeOrder, nextTurn, rows, tokenFromMember, tokenFromStats } from '@/lib/mapOps'
 import { resolveCreature, type CreatureInfo } from '@/lib/creatures'
 import { newId } from '@/lib/id'
+import { encounterForMap, needsSeeding, seedEncounterMap } from '@/lib/encounterSetup'
+import { updateMap, userCtx } from '@/db/repo'
 import { Button, Empty, IconButton, Input, MenuItem, Modal, PopoverMenu, Segmented, cx } from '@/components/ui'
 import type { BattleMap, MapLink, MapState } from '@/types'
 
@@ -95,6 +101,18 @@ function BattleView({ map }: { map: BattleMap }) {
       setApplyHandler(null)
     }
   }, [map.id, setActiveMap, setSelection, setApplyHandler])
+
+  // First time an encounter map is opened without creatures on it: place encounter + party automatically.
+  useEffect(() => {
+    if (!needsSeeding(map, entities)) return
+    seedEncounterMap(map.id, userCtx()).then((n) => {
+      if (n) {
+        toast(`Placed ${n} tokens from “${encounterForMap(map, entities)?.name}” — saved as the starting setup`, 'success')
+        setTimeout(() => canvas.current?.fit(), 50)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map.id, map.seeded, entities])
 
   useEffect(() => {
     setApplyHandler((amount, mode) => {
@@ -162,9 +180,28 @@ function BattleView({ map }: { map: BattleMap }) {
     }))
   }
 
+  const [areaSheet, setAreaSheet] = useState<MapLink | null>(null)
   const openLink = (l: MapLink) => {
-    if (l.targetMapId && maps.some((m) => m.id === l.targetMapId)) nav(`/c/${campaign.id}/battle/${l.targetMapId}`)
-    else setLinkEdit(l)
+    const hasTarget = !!l.targetMapId && maps.some((m) => m.id === l.targetMapId)
+    if (!hasTarget && !l.locationId) setLinkEdit(l)
+    else setAreaSheet(l)
+  }
+
+  /** Move all party tokens (with HP, conditions…) from this map into the target map, then go there. */
+  const enterWithParty = async (targetId: string) => {
+    const pcs = ref.current.tokens.filter((t) => t.kind === 'pc')
+    const target = await db.maps.get(targetId)
+    if (!target) return
+    let state: MapState = { ...target.state, tokens: target.state.tokens.filter((t) => !(t.kind === 'pc' && pcs.some((p) => p.refId === t.refId))) }
+    const b = { maxX: cols(target), maxY: rows(target) }
+    const entry = { x: Math.floor(b.maxX * 0.25), y: Math.floor(b.maxY / 2) }
+    for (const p of pcs) {
+      const pos = freeCellNear(state, entry.x, entry.y, p.size, b.maxX, b.maxY)
+      state = { ...state, tokens: [...state.tokens, { ...p, ...pos, initiative: undefined }] }
+    }
+    await updateMap(targetId, { state })
+    commit((s) => ({ ...s, tokens: s.tokens.filter((t) => t.kind !== 'pc') }))
+    nav(`/c/${campaign.id}/battle/${targetId}`)
   }
 
   const setToolSafe = (t: MapTool) => {
@@ -386,6 +423,22 @@ function BattleView({ map }: { map: BattleMap }) {
         }}
       />
       <LinkDialog map={map} link={linkEdit} onClose={() => setLinkEdit(null)} />
+      {areaSheet && (
+        <AreaSheet
+          link={areaSheet}
+          onClose={() => setAreaSheet(null)}
+          onEnter={(withParty) => {
+            const t = areaSheet.targetMapId!
+            setAreaSheet(null)
+            if (withParty) enterWithParty(t)
+            else nav(`/c/${campaign.id}/battle/${t}`)
+          }}
+          onEdit={() => {
+            setLinkEdit(areaSheet)
+            setAreaSheet(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -400,5 +453,46 @@ function SpawnPicker({ onSpawn }: { onSpawn: (c: CreatureInfo, count: number) =>
       </div>
       <CreaturePicker autoFocus className="min-h-0 flex-1" onPick={(c) => onSpawn(c, count)} />
     </div>
+  )
+}
+
+/** Tapped an area on the map: room description, sub-map, move the party. */
+function AreaSheet({ link, onClose, onEnter, onEdit }: { link: MapLink; onClose: () => void; onEnter: (withParty: boolean) => void; onEdit: () => void }) {
+  const { index, maps } = useCampaign()
+  const openDetail = useUI((s) => s.openDetail)
+  const loc = link.locationId ? index.byId.get(link.locationId) : undefined
+  const target = link.targetMapId ? maps.find((m) => m.id === link.targetMapId) : undefined
+  return (
+    <Modal open onClose={onClose} title={link.label}>
+      <div className="space-y-4">
+        {loc?.summary && <p className="text-sm text-muted">{loc.summary}</p>}
+        <div className="grid gap-2">
+          {loc && (
+            <Button
+              icon={<BookOpen className="size-4" />}
+              onClick={() => {
+                onClose()
+                openDetail({ kind: 'entity', id: loc.id })
+              }}
+            >
+              Room details
+            </Button>
+          )}
+          {target && (
+            <>
+              <Button variant="primary" icon={<Footprints className="size-4" />} onClick={() => onEnter(true)}>
+                Enter “{target.name}” with the party
+              </Button>
+              <Button icon={<LogIn className="size-4" />} onClick={() => onEnter(false)}>
+                Open map only
+              </Button>
+            </>
+          )}
+          <Button variant="ghost" icon={<Pencil className="size-4" />} onClick={onEdit}>
+            Edit area
+          </Button>
+        </div>
+      </div>
+    </Modal>
   )
 }

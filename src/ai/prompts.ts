@@ -35,6 +35,7 @@ export const ENTITY_FIELDS_DOC = `Entity fields:
 - parentId (scene -> its chapter id; sub-location -> parent location id)
 - order (number; ordering of chapters and of scenes within a chapter)
 - stats (StatBlock, for creatures and NPCs that may fight)
+- dungeon: complex sites (rooms are locations with parent = dungeon). Build dungeons and finished encounters with the generate_complete tool.
 - encounter ({ creatures: {refId, name, count}[], difficulty?, tactics? } for type "encounter"; refId is a campaign entity id or compendium id; name is the creature name)`
 
 export function languageRule(c: Campaign) {

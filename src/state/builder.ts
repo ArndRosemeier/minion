@@ -6,6 +6,7 @@ import { extractLinks, resolveLink, EntityIndex } from '@/lib/links'
 import { loadCompendium } from '@/compendium/compendium'
 import { generateBattlemapImage, illustrateEntity } from '@/ai/generate'
 import { useAgentRun } from './agentRun'
+import { seedEncounterMap } from '@/lib/encounterSetup'
 import type { AutomationMode, Campaign, ChatThread, Entity } from '@/types'
 import { SYSTEM_LABEL } from '@/types'
 
@@ -31,6 +32,7 @@ export const STEPS: StepDef[] = [
   { id: 'locations', title: 'Locations', description: 'Places with descriptions, features and secrets.', defaultMode: 'auto', kind: 'agent' },
   { id: 'npcs', title: 'NPCs & factions', description: 'Characters with motives, voices, secrets, stats if needed.', defaultMode: 'auto', kind: 'agent' },
   { id: 'encounters', title: 'Encounters', description: 'Balanced fights & hazards using official or homebrew creatures.', defaultMode: 'assisted', kind: 'agent' },
+  { id: 'dungeons', title: 'Dungeons', description: 'Design every dungeon: rooms, passages, encounters, floor-plan map and room maps.', defaultMode: 'auto', kind: 'loop' },
   { id: 'write', title: 'Write chapters', description: 'Full playable text per chapter: read-aloud, checks, treasure.', defaultMode: 'auto', kind: 'loop' },
   { id: 'links', title: 'Fill the gaps', description: 'Create every referenced but missing entry (homebrew).', defaultMode: 'auto', kind: 'loop' },
   { id: 'maps', title: 'Battle maps', description: 'Paint a battle map for every encounter.', defaultMode: 'auto', kind: 'loop' },
@@ -46,7 +48,7 @@ export function stepPrompt(step: string, c: Campaign, extra = ''): string {
     premise:
       'Develop (or refine, if already present) the premise: central conflict, antagonist and their plan, stakes, setting region, themes, tone, a strong hook for the party. Update the campaign settings (update_campaign: premise, tone, artStyle, and name if it is still generic). Create one note "Campaign Overview" with the big picture, secrets and the overall arc (GM-only info in secrets).',
     outline:
-      'Create the chapters (type chapter, use order) and their scenes (type scene, parent = chapter name, use order). Chapter body: GM overview — situation, goals, how the party enters and leaves, key choices — then the scene flow with [[links]]. Scene body: a concise outline of what happens (details come later). Reference planned NPCs, locations and encounters by [[Name]] — they will be created in later steps.',
+      'Create the chapters (type chapter, use order) and their scenes (type scene, parent = chapter name, use order). Chapter body: GM overview — situation, goals, how the party enters and leaves, key choices — then the scene flow with [[links]]. Scene body: a concise outline of what happens (details come later). Reference planned NPCs, locations and encounters by [[Name]] — they will be created in later steps. If the adventure has a dungeon or complex site (cave system, ruin, keep, ship, sewer…), create it as a "dungeon" entry with name, summary and concept in body — it is designed in full (rooms, encounters, maps) in a later step; don\'t create its rooms yourself.',
     locations:
       'Create all locations the story references (check the outline for [[links]] that do not exist yet) plus other key places. Each: summary, evocative read-aloud description ("> "), notable features (with game-relevant details), inhabitants, secrets, hooks. Use parent for sub-locations (e.g. rooms/areas of a dungeon or building).',
     npcs:
@@ -108,7 +110,7 @@ async function findOrCreateBuilderThread(campaignId: string): Promise<string> {
   return t.id
 }
 
-const IMAGE_TYPES: Entity['type'][] = ['npc', 'location', 'chapter', 'creature', 'item', 'faction']
+const IMAGE_TYPES: Entity['type'][] = ['npc', 'location', 'dungeon', 'chapter', 'creature', 'item', 'faction']
 
 export async function pool<T>(items: T[], n: number, fn: (t: T) => Promise<void>, shouldStop: () => boolean) {
   let i = 0
@@ -147,6 +149,22 @@ export const useBuilder = create<BuilderStore>((set, get) => {
       const b = await runAgentStep(cid, thread, stepPrompt(step.id, fresh))
       if (!b) throw new Error('The AI step did not complete')
       addBatch(cid, step.id, b)
+      return
+    }
+    if (step.id === 'dungeons') {
+      const { completeEntity } = await import('@/ai/complete')
+      const todo = (await db.entities.where({ campaignId: cid, type: 'dungeon' }).toArray()).filter((d) => !d.dungeon?.rooms?.length)
+      for (const [i, d] of todo.entries()) {
+        if (stopped(cid)) return
+        patch(cid, { progress: `Designing dungeon ${i + 1}/${todo.length}: ${d.name}` })
+        try {
+          // images come in the illustrations step
+          await completeEntity(fresh, { type: 'dungeon', id: d.id, draft: {} }, new Set(['text', 'rooms', 'creatures', 'map', 'roomMaps', 'links']), {}, (_sid, p) => p.detail && patch(cid, { progress: `${d.name}: ${p.detail}` }), ctx)
+        } catch (e: any) {
+          patch(cid, { error: `Dungeon “${d.name}”: ${e.message}` })
+        }
+      }
+      addBatch(cid, step.id, ctx.batchId)
       return
     }
     if (step.id === 'write') {
@@ -212,6 +230,7 @@ export const useBuilder = create<BuilderStore>((set, get) => {
           } catch (e: any) {
             patch(cid, { error: `Map “${enc.name}”: ${e.message}` })
           }
+          await seedEncounterMap(map.id, ctx)
         },
         () => stopped(cid),
       )

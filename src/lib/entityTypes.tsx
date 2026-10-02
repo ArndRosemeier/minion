@@ -2,6 +2,7 @@ import {
   Activity,
   BookMarked,
   BookOpen,
+  Castle,
   Clapperboard,
   Flag,
   Footprints,
@@ -30,6 +31,7 @@ export interface TypeMeta {
 export const ENTITY_TYPES: Record<EntityType, TypeMeta> = {
   chapter: { label: 'Chapter', plural: 'Chapters', icon: BookOpen, color: 'var(--color-t-chapter)', hint: 'A part of the story, read in order during play.' },
   scene: { label: 'Scene', plural: 'Scenes', icon: Clapperboard, color: 'var(--color-t-scene)', hint: 'An event or scene inside a chapter.' },
+  dungeon: { label: 'Dungeon', plural: 'Dungeons', icon: Castle, color: 'var(--color-t-dungeon)', hint: 'Dungeons and complex sites: rooms, passages, encounters and maps.' },
   location: { label: 'Location', plural: 'Locations', icon: MapPin, color: 'var(--color-t-location)', hint: 'Places, rooms, regions.' },
   npc: { label: 'NPC', plural: 'NPCs', icon: User, color: 'var(--color-t-npc)', hint: 'Non-player characters, optionally with stats.' },
   creature: { label: 'Creature', plural: 'Creatures', icon: Skull, color: 'var(--color-t-creature)', hint: 'Monsters and stat blocks (homebrew or adapted).' },
@@ -46,6 +48,7 @@ export const ENTITY_TYPE_ORDER: EntityType[] = [
   'chapter',
   'scene',
   'location',
+  'dungeon',
   'npc',
   'creature',
   'encounter',

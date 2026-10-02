@@ -5,9 +5,11 @@ import { newId } from '@/lib/id'
 import { normalizeName } from '@/compendium/compendium'
 import { generateBattlemapImage, generateEntityData, generateStatBlock, generateSummaries, illustrateEntity } from '@/ai/generate'
 import { pool, stepPrompt, useBuilder } from './builder'
+import { seedEncounterMap } from '@/lib/encounterSetup'
 import { useAgentRun } from './agentRun'
 import type { GapCategory, GapKind } from '@/lib/gaps'
 import type { Campaign, Entity } from '@/types'
+import type { Part } from '@/ai/complete'
 
 export interface FillRun {
   running: boolean
@@ -30,7 +32,7 @@ interface FillStore {
 }
 
 /** creation steps first (new entries), then text, then images */
-const ORDER: GapKind[] = ['links', 'encCreatures', 'statsCreature', 'statsNpc', 'chapters', 'summaries', 'encMaps', 'mapImages', 'images']
+const ORDER: GapKind[] = ['links', 'encStructure', 'dungeons', 'encCreatures', 'statsCreature', 'statsNpc', 'chapters', 'summaries', 'encMaps', 'encSetup', 'mapImages', 'images']
 
 /** how many progress units a category contributes */
 const units = (kind: GapKind, n: number) => (kind === 'summaries' ? Math.ceil(n / 25) : kind === 'links' ? Math.ceil(n / 40) : n)
@@ -67,6 +69,34 @@ export const useFill = create<FillStore>((set, get) => {
             await agent(cid, stepPrompt('links', campaign, `Unresolved links:\n${list}`))
           } catch (e: any) {
             fail(cid, `Links: ${e.message}`)
+          }
+          tick(cid)
+        }
+        return
+      }
+      case 'encStructure':
+      case 'dungeons': {
+        const { completeEntity } = await import('@/ai/complete')
+        const parts: Part[] = cat.kind === 'dungeons' ? ['text', 'rooms', 'creatures', 'map', 'roomMaps', 'links'] : ['encounter', 'creatures']
+        for (const id of ids) {
+          if (stopped(cid)) return
+          const e = await fresh(id)
+          if (!e) {
+            tick(cid)
+            continue
+          }
+          patch(cid, { progress: `${cat.kind === 'dungeons' ? 'Building dungeon' : 'Setting up encounter'}: ${e.name}` })
+          try {
+            await completeEntity(
+              campaign,
+              { type: e.type, id: e.id, draft: {} },
+              new Set(parts),
+              {},
+              (_s, p) => p.detail && patch(cid, { progress: `${e.name}: ${p.detail}` }),
+              ctx,
+            )
+          } catch (err: any) {
+            fail(cid, `${e.name}: ${err.message}`)
           }
           tick(cid)
         }
@@ -187,6 +217,7 @@ export const useFill = create<FillStore>((set, get) => {
               const description = `${enc.name}\n${enc.encounter?.tactics ?? ''}\n${enc.body}\n${loc ? `Location: ${loc.name}\n${loc.body}` : ''}`.slice(0, 5000)
               const map = await createMap(cid, { name: enc.name, description, encounterId: enc.id, locationId: loc?.id, width: 30 * 70, height: 20 * 70 }, ctx)
               await updateEntity(enc.id, { encounter: { ...(enc.encounter ?? { creatures: [] }), mapId: map.id } }, ctx)
+              await seedEncounterMap(map.id, ctx)
               const r = await generateBattlemapImage(campaign, description, { cols: 30, rows: 20 })
               await updateMap(map.id, { image: r.asset.id, width: r.asset.width, height: r.asset.height, prompt: r.prompt, grid: { ...map.grid, size: r.gridSize } }, ctx)
             } catch (e: any) {
@@ -196,6 +227,19 @@ export const useFill = create<FillStore>((set, get) => {
           },
           () => stopped(cid),
         )
+        return
+      }
+      case 'encSetup': {
+        for (const id of ids) {
+          if (stopped(cid)) return
+          patch(cid, { progress: 'Placing encounter creatures…' })
+          try {
+            await seedEncounterMap(id, ctx)
+          } catch (e: any) {
+            fail(cid, `Map setup: ${e.message}`)
+          }
+          tick(cid)
+        }
         return
       }
       case 'mapImages': {

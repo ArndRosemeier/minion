@@ -211,7 +211,7 @@ function SidePanel({ e }: { e: Entity }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [e, index, campaign.system, entities, compendiumVersion])
 
-  const groups = ['npc', 'location', 'encounter', 'creature', 'item', 'handout', 'faction', 'scene', 'chapter', 'spell', 'rule'] as const
+  const groups = ['npc', 'location', 'dungeon', 'encounter', 'creature', 'item', 'handout', 'faction', 'scene', 'chapter', 'spell', 'rule'] as const
   return (
     <aside className="hidden w-72 shrink-0 space-y-5 overflow-y-auto border-l border-line p-4 xl:block 2xl:w-96">
       {groups.map((g) => {

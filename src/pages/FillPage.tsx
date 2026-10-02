@@ -1,38 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, PackageCheck, Pause, Play, Undo2 } from 'lucide-react'
 import { useCampaign } from '@/state/campaign'
 import { useSettings } from '@/state/settings'
 import { useFill } from '@/state/fill'
-import { listModels, type ORModel } from '@/ai/openrouter'
-import { computeGaps, contextTokens, estimateCost, formatUsd, type GapCategory, type Prices } from '@/lib/gaps'
+import { usePrices } from '@/lib/usePrices'
+import { computeGaps, contextTokens, estimateCost, formatUsd, type GapCategory } from '@/lib/gaps'
 import { Button, Card, ConfirmModal, Empty, Spinner, cx } from '@/components/ui'
 
 interface Sel {
   on: boolean
   excluded: Set<string>
-}
-
-function usePrices(): Prices | null {
-  const { chatModel, fastModel, imageModel } = useSettings((s) => s.settings)
-  const [models, setModels] = useState<ORModel[] | null>(null)
-  useEffect(() => {
-    listModels()
-      .then(setModels)
-      .catch(() => setModels([]))
-  }, [])
-  return useMemo(() => {
-    if (!models) return null
-    const p = (id: string) => models.find((m) => m.id === id)?.pricing
-    const num = (v?: string) => Math.max(0, Number(v) || 0)
-    const chat = p(chatModel)
-    const fast = p(fastModel)
-    const img = p(imageModel)
-    return {
-      chat: { in: num(chat?.prompt), out: num(chat?.completion) },
-      fast: { in: num(fast?.prompt), out: num(fast?.completion) },
-      image: { in: num(img?.prompt), out: num(img?.completion), imageOut: num((img as { image_output?: string } | undefined)?.image_output) },
-    }
-  }, [models, chatModel, fastModel, imageModel])
 }
 
 export function FillPage() {

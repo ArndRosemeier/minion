@@ -17,6 +17,7 @@ const ENTITY_HINTS: Record<string, EntityType> = {
   character: 'npc',
   location: 'location',
   place: 'location',
+  dungeon: 'dungeon',
   scene: 'scene',
   event: 'scene',
   chapter: 'chapter',

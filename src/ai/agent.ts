@@ -19,6 +19,7 @@ What makes content great at the table:
 - Chapters ("chapter") hold the playable story flow in order: situation, what the players see (read-aloud "> " boxes), what happens, choices and consequences, links to scenes, NPCs, locations, encounters, handouts. Scenes ("scene") are concrete events within a chapter (parent = chapter).
 - NPCs: look, voice/mannerism, motivation, what they know, secrets; stats only if they may fight.
 - Locations: sensory description, notable features, inhabitants, hooks; sub-locations via parent.
+- Dungeons (type "dungeon"): build them with generate_complete — it designs rooms, passages, encounters, floor plan and all maps. Finished encounters (creatures resolved, map painted and populated) also come from generate_complete.
 - Encounters: creatures appropriate to party level (encounter.creatures with exact official names or homebrew creature entries), tactics, terrain, what happens on win/lose; a battle map description.
 - Every rules reference (spell, condition, action, creature, item, trait) is a [[wikilink]] so the GM can tap it. The GM must never need another book.
 - Keep summaries short (one line). Use Markdown headings, lists and bold for scannability on a tablet.`
@@ -195,6 +196,8 @@ export function toolLabel(name: string, args: string): string {
       return `Updating battle map`
     case 'consult_advisors':
       return 'Consulting advisors'
+    case 'generate_complete':
+      return `Generating ${a.type ?? 'entry'} “${a.name ?? a.id ?? ''}” completely (text, creatures, maps, images…)`
   }
   return name
 }

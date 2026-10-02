@@ -1,16 +1,20 @@
 import { extractLinks, resolveLink, type EntityIndex } from './links'
 import { resolveCreature } from './creatures'
 import { ENTITY_TYPES } from './entityTypes'
+import { encounterForMap, needsSeeding } from './encounterSetup'
 import type { BattleMap, Campaign, Entity, EntityType } from '@/types'
 
 export type GapKind =
   | 'links'
+  | 'encStructure'
+  | 'dungeons'
   | 'encCreatures'
   | 'statsCreature'
   | 'statsNpc'
   | 'summaries'
   | 'chapters'
   | 'encMaps'
+  | 'encSetup'
   | 'mapImages'
   | 'images'
 
@@ -35,6 +39,7 @@ export interface GapCategory {
 export const IMAGE_TYPES: { type: EntityType; defaultOn: boolean }[] = [
   { type: 'npc', defaultOn: true },
   { type: 'location', defaultOn: true },
+  { type: 'dungeon', defaultOn: true },
   { type: 'creature', defaultOn: true },
   { type: 'chapter', defaultOn: true },
   { type: 'faction', defaultOn: true },
@@ -68,6 +73,31 @@ export function computeGaps(campaign: Campaign, entities: Entity[], maps: Battle
     description: '[[Links]] that match neither a campaign entry nor the rules. The AI creates the missing entries (homebrew where needed).',
     defaultOn: true,
     items: [...missing.entries()].map(([t, where]) => ({ id: t, label: t, sub: `in ${[...where].slice(0, 3).join(', ')}` })).sort(byName),
+  })
+
+  // encounters whose creatures exist only as prose
+  cats.push({
+    id: 'encStructure',
+    kind: 'encStructure',
+    title: 'Encounters without creatures',
+    description: 'Encounters with no creature list. The AI reads the text and sets up the creatures (official stat blocks or new homebrew ones), tactics and difficulty.',
+    defaultOn: true,
+    items: entities
+      .filter((e) => e.type === 'encounter' && !e.encounter?.creatures.length)
+      .map((e) => ({ id: e.id, label: e.name, sub: e.summary }))
+      .sort(byName),
+  })
+
+  cats.push({
+    id: 'dungeons',
+    kind: 'dungeons',
+    title: 'Dungeons not built',
+    description: 'Dungeons without rooms. Designs rooms, passages and encounters, paints the overview from the floor plan and maps for rooms with encounters.',
+    defaultOn: true,
+    items: entities
+      .filter((e) => e.type === 'dungeon' && !e.dungeon?.rooms?.length)
+      .map((e) => ({ id: e.id, label: e.name, sub: e.summary }))
+      .sort(byName),
   })
 
   // encounter creatures without any stat block
@@ -141,6 +171,14 @@ export function computeGaps(campaign: Campaign, entities: Entity[], maps: Battle
       .sort(byName),
   })
   cats.push({
+    id: 'encSetup',
+    kind: 'encSetup',
+    title: 'Encounter maps not set up',
+    description: 'Maps whose encounter creatures are not on the map yet. Places creatures and party and saves it as the starting setup. Free — no AI.',
+    defaultOn: true,
+    items: maps.filter((m) => needsSeeding(m, entities)).map((m) => ({ id: m.id, label: m.name, sub: encounterForMap(m, entities)?.name })),
+  })
+  cats.push({
     id: 'mapImages',
     kind: 'mapImages',
     title: 'Battle maps without an image',
@@ -190,6 +228,13 @@ export function estimateCost(cat: GapCategory, n: number, p: Prices, ctx: number
       return n * image
     case 'encMaps':
       return n * image
+    case 'encSetup':
+      return 0
+    case 'encStructure':
+      return n * (Math.min(ctx, 30000) * p.chat.in + 12000 * p.chat.in + 2500 * p.chat.out)
+    case 'dungeons':
+      // design + a few homebrew creatures + overview + ~4 room maps + links
+      return n * ((ctx + 14000) * p.chat.in + 14000 * p.chat.out + 2 * (ctx * p.chat.in + 2500 * p.chat.out) + 5 * image + 4 * (ctx * p.chat.in + 1500 * p.chat.out))
     case 'statsCreature':
     case 'statsNpc':
       return n * (4000 * p.chat.in + 1800 * p.chat.out)

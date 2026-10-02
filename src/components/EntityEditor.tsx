@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
-import { BookOpen, ImagePlus, Minus, Plus, Star, Trash2, Upload, Wand2, X } from 'lucide-react'
+import { BookOpen, ImagePlus, Minus, Plus, Star, Trash2, Upload, X } from 'lucide-react'
 import { useCampaign } from '@/state/campaign'
 import { createEntity, saveAsset, updateEntity, userCtx } from '@/db/repo'
 import { db } from '@/db/db'
 import { ENTITY_TYPE_ORDER, ENTITY_TYPES } from '@/lib/entityTypes'
-import { generateEntityData, generateIllustration, entitySubject } from '@/ai/generate'
+import { generateIllustration, entitySubject } from '@/ai/generate'
+import { GeneratePanel } from './GeneratePanel'
 import { useUI, toast } from '@/state/ui'
 import { resolveCreature } from '@/lib/creatures'
 import { encounterDifficulty } from '@/lib/encounterMath'
@@ -47,8 +48,7 @@ function EntityEditor({ target, onClose }: { target: { id?: string; draft?: Part
   )
   const [tab, setTab] = useState<Tab>('content')
   const [saving, setSaving] = useState(false)
-  const [aiBusy, setAiBusy] = useState(false)
-  const [aiPrompt, setAiPrompt] = useState('')
+  const [generating, setGenerating] = useState(false)
   const set = (patch: Partial<Entity>) => setE((x) => ({ ...x, ...patch }))
   const type = (e.type ?? 'npc') as EntityType
 
@@ -58,7 +58,7 @@ function EntityEditor({ target, onClose }: { target: { id?: string; draft?: Part
   }, [type])
 
   const parents = useMemo(() => {
-    const want: EntityType[] = type === 'scene' ? ['chapter'] : type === 'location' ? ['location'] : ['chapter', 'location', 'faction']
+    const want: EntityType[] = type === 'scene' ? ['chapter'] : type === 'location' ? ['location', 'dungeon'] : ['chapter', 'location', 'dungeon', 'faction']
     return entities.filter((x) => want.includes(x.type) && x.id !== existing?.id)
   }, [entities, type, existing?.id])
 
@@ -82,30 +82,6 @@ function EntityEditor({ target, onClose }: { target: { id?: string; draft?: Part
     }
   }
 
-  const aiFill = async () => {
-    setAiBusy(true)
-    try {
-      const instructions = [
-        aiPrompt,
-        existing || e.body ? `Improve/complete this existing draft, keep what is good:\n${JSON.stringify({ name: e.name, summary: e.summary, body: e.body, secrets: e.secrets })}` : '',
-      ]
-        .filter(Boolean)
-        .join('\n\n')
-      const data = await generateEntityData(campaign, entities, {
-        type,
-        name: e.name || undefined,
-        instructions,
-        withStats: !!e.stats || type === 'creature',
-      })
-      setE((x) => ({ ...x, ...data, images: x.images, id: x.id }))
-      toast('AI draft filled in — review and save', 'success')
-    } catch (err: any) {
-      toast(err.message, 'error')
-    } finally {
-      setAiBusy(false)
-    }
-  }
-
   const tabs: { value: Tab; label: string }[] = [
     { value: 'content', label: 'Content' },
     { value: 'stats', label: 'Stats' },
@@ -124,7 +100,7 @@ function EntityEditor({ target, onClose }: { target: { id?: string; draft?: Part
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" loading={saving} onClick={save}>
+          <Button variant="primary" loading={saving} disabled={generating} title={generating ? 'The AI saves its result itself' : undefined} onClick={save}>
             Save
           </Button>
         </>
@@ -197,17 +173,16 @@ function EntityEditor({ target, onClose }: { target: { id?: string; draft?: Part
                   <Input type="number" value={e.order ?? ''} onChange={(ev) => set({ order: Number(ev.target.value) })} />
                 </Field>
               )}
-            <div className="space-y-2 rounded-xl border border-accent/25 bg-accent/5 p-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-accent">
-                <Wand2 className="size-4" /> Write with AI
-              </div>
-              <div className="flex flex-col gap-2">
-                <Input placeholder="Optional direction, e.g. “a nervous halfling smuggler with a secret”" value={aiPrompt} onChange={(ev) => setAiPrompt(ev.target.value)} />
-                <Button variant="primary" loading={aiBusy} onClick={aiFill}>
-                  {existing || e.body ? 'Improve' : 'Generate'}
-                </Button>
-              </div>
-            </div>
+              <GeneratePanel
+                type={type}
+                existingId={existing?.id}
+                getDraft={() => e}
+                onStart={() => setGenerating(true)}
+                onDone={(id) => {
+                  onClose()
+                  openDetail({ kind: 'entity', id })
+                }}
+              />
             </div>
           </div>
         )}

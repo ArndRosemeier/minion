@@ -160,7 +160,7 @@ export interface BattlemapResult {
 export async function generateBattlemapImage(
   campaign: Campaign,
   description: string,
-  opts: { cols?: number; rows?: number; direction?: string; reference?: string; promptOverride?: string } = {},
+  opts: { cols?: number; rows?: number; direction?: string; reference?: string; referenceKind?: 'parent' | 'layout'; promptOverride?: string } = {},
 ): Promise<BattlemapResult> {
   const cols = opts.cols ?? 30
   const rows = opts.rows ?? 20
@@ -172,7 +172,9 @@ export async function generateBattlemapImage(
     base,
     scale,
     opts.reference
-      ? 'The attached image is the parent map; this is a detailed, zoomed-in view of the marked area. Keep materials, colors and style consistent with it.'
+      ? opts.referenceKind === 'layout'
+        ? 'The attached image is the exact FLOOR PLAN of this map: light-gray shapes are walkable floor (chambers, caves, halls, passages) and black is solid rock, earth or wall. Keep every chamber and passage exactly where and how it is drawn — same positions, shapes and proportions, nothing added or removed — but render it as a richly detailed, natural, painted battle map with real materials. Never reproduce the flat gray/black sketch look.'
+        : 'The attached image is the parent map; this is a detailed, zoomed-in view of the marked area. Keep materials, colors and style consistent with it.'
       : '',
     'Top-down orthographic battle map, no grid, no text, no creatures.',
   ]
