@@ -54,7 +54,7 @@ export function Showcase() {
   return (
     <div className="anim-fade fixed inset-0 z-[70] flex items-center justify-center bg-black" onClick={() => setChrome((c) => !c)}>
       {showcase.image ? (
-        <AssetImage id={showcase.image} className="max-h-full max-w-full object-contain" />
+        <AssetImage id={showcase.image} className="size-full object-contain" />
       ) : (
         <div className="max-w-3xl px-10 text-center">
           {showcase.title && <div className="mb-6 font-display text-5xl text-accent-strong">{showcase.title}</div>}
