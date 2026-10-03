@@ -8,6 +8,7 @@ import { Button, Card, Field, IconButton, Input, Segmented, Textarea, Toggle } f
 import { newId } from '@/lib/id'
 import type { CompendiumManifest } from '@/types'
 import { Markdown } from '@/components/Markdown'
+import { PREF_SECTIONS } from '@/ai/prompts'
 
 export function SettingsPage() {
   const { settings, update } = useSettings()
@@ -16,6 +17,9 @@ export function SettingsPage() {
   const [missing, setMissing] = useState<string[]>([])
   const [storage, setStorage] = useState<{ usage: number; quota: number; persisted: boolean } | null>(null)
   const [credits, setCredits] = useState<CompendiumManifest[]>([])
+  const prefs = settings.preferences ?? {}
+  // sections with text start expanded (only on first render, so clearing a box doesn't collapse it)
+  const [openPrefs] = useState(() => new Set(PREF_SECTIONS.filter((x) => prefs.sections?.[x.id]?.trim()).map((x) => x.id)))
 
   useEffect(() => {
     navigator.storage?.estimate?.().then(async (e) => setStorage({ usage: e.usage ?? 0, quota: e.quota ?? 0, persisted: (await navigator.storage.persisted?.()) ?? false }))
@@ -162,6 +166,42 @@ export function SettingsPage() {
       </Card>
       </div>
       <div className="space-y-6">
+      <Card className="space-y-4 p-5">
+        <h2 className="font-display text-lg">Your preferences</h2>
+        <p className="text-sm text-muted">
+          Standing wishes the AI follows whenever it creates something for any campaign: what you like, and what to avoid. The global part goes into every request; each section only into requests that create that kind of entry.
+        </p>
+        <Field label="Global">
+          <Textarea
+            minRows={3}
+            value={prefs.global ?? ''}
+            placeholder="e.g. Grounded, low-magic tone. No comic relief NPCs. Keep read-aloud boxes short. Avoid prophecies and chosen-one plots."
+            onChange={(e) => update({ preferences: { ...prefs, global: e.target.value } })}
+          />
+        </Field>
+        <div className="space-y-2">
+          {PREF_SECTIONS.map((sec) => {
+            const value = prefs.sections?.[sec.id] ?? ''
+            return (
+              <details key={sec.id} open={openPrefs.has(sec.id) || undefined} className="group rounded-xl border border-line bg-surface-2">
+                <summary className="flex cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium select-none">
+                  {sec.label}
+                  {value.trim() && <span className="size-1.5 rounded-full bg-accent" />}
+                </summary>
+                <div className="px-4 pb-4">
+                  <Textarea
+                    minRows={2}
+                    value={value}
+                    placeholder={sec.hint}
+                    onChange={(e) => update({ preferences: { ...prefs, sections: { ...prefs.sections, [sec.id]: e.target.value } } })}
+                  />
+                </div>
+              </details>
+            )
+          })}
+        </div>
+      </Card>
+
       <Card className="space-y-4 p-5">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg">Advisors</h2>

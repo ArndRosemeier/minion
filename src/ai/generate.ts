@@ -1,5 +1,5 @@
 import { chat, chatJson, generateImage } from './openrouter'
-import { campaignHeader, ENTITY_FIELDS_DOC, LINK_RULES, languageRule, STATBLOCK_SCHEMA, entityIndexLine } from './prompts'
+import { campaignHeader, ENTITY_FIELDS_DOC, gmPreferences, LINK_RULES, languageRule, STATBLOCK_SCHEMA, entityIndexLine } from './prompts'
 import { getSettings } from '@/state/settings'
 import { dataUrlToBlob, saveAsset, updateEntity, type ChangeCtx } from '@/db/repo'
 import { db } from '@/db/db'
@@ -23,7 +23,10 @@ export async function generateEntityData(
     ENTITY_FIELDS_DOC,
     STATBLOCK_SCHEMA,
     `Existing campaign entities (for consistency, link to them where relevant):\n${entities.slice(0, 300).map(entityIndexLine).join('\n')}`,
-  ].join('\n\n')
+    gmPreferences([req.type]),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
   const user = [
     `Create a ${req.type}${req.name ? ` named "${req.name}"` : ''}.`,
     req.instructions && `Instructions: ${req.instructions}`,
@@ -98,7 +101,7 @@ Be organic and specific: describe terrain, materials, light, clutter, paths, cov
     messages: [
       {
         role: 'system',
-        content: `${rules}\nArt style: ${campaign.artStyle || 'painterly fantasy'}.\nAnswer with the prompt only, in English, max 120 words.`,
+        content: [`${rules}\nArt style: ${campaign.artStyle || 'painterly fantasy'}.\nAnswer with the prompt only, in English, max 120 words.`, gmPreferences([], true)].filter(Boolean).join('\n\n'),
       },
       { role: 'user', content: `Subject:\n${clip(subject, 4000)}${extra ? `\n\nAdditional direction: ${extra}` : ''}` },
     ],
@@ -154,7 +157,12 @@ export async function writeImagePrompts(campaign: Campaign, items: { id: string;
           messages: [
             {
               role: 'system',
-              content: `For each tabletop RPG subject write a prompt for an image model: an evocative illustration (character portrait, place, scene, creature or item as fits), no text or letters in the image. Art style: ${campaign.artStyle || 'painterly fantasy'}. English, max 100 words each. Return ONLY JSON mapping each id to its prompt.`,
+              content: [
+                `For each tabletop RPG subject write a prompt for an image model: an evocative illustration (character portrait, place, scene, creature or item as fits), no text or letters in the image. Art style: ${campaign.artStyle || 'painterly fantasy'}. English, max 100 words each. Return ONLY JSON mapping each id to its prompt.`,
+                gmPreferences([], true),
+              ]
+                .filter(Boolean)
+                .join('\n\n'),
             },
             { role: 'user', content: JSON.stringify(chunk.map((c) => ({ id: c.id, subject: clip(c.subject, 1500) }))) },
           ],
@@ -278,7 +286,10 @@ export async function generateStatBlock(campaign: Campaign, e: Entity): Promise<
           languageRule(campaign),
           'Follow the official creature-building rules for the system (level/CR-appropriate AC, HP, attack bonus, damage, saves, DCs). Use official spells, conditions and actions by their exact English names; put rules text in the actions. Wrap rules references in action texts in [[ ]].',
           STATBLOCK_SCHEMA,
-        ].join('\n\n'),
+          gmPreferences([e.type]),
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
       },
       {
         role: 'user',

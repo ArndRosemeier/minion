@@ -3,7 +3,7 @@ import { newId } from '@/lib/id'
 import { getSettings } from '@/state/settings'
 import { chat, type ORMessage } from './openrouter'
 import { ADVISOR_TOOL, executeTool, TOOLS } from './tools'
-import { campaignKnowledge, ENTITY_FIELDS_DOC, LINK_RULES, languageRule, STATBLOCK_SCHEMA } from './prompts'
+import { campaignKnowledge, ENTITY_FIELDS_DOC, gmPreferences, LINK_RULES, languageRule, STATBLOCK_SCHEMA } from './prompts'
 import type { Advisor, ChatMessage } from '@/types'
 import { LEVEL_PLANNING } from '@/lib/levels'
 import { SYSTEM_LABEL, type Campaign } from '@/types'
@@ -34,8 +34,11 @@ export function buildSystemPrompt(campaignKnowledgeText: string, campaign: Campa
     ENTITY_FIELDS_DOC,
     STATBLOCK_SCHEMA,
     LEVEL_PLANNING(campaign),
+    gmPreferences('all', true),
     `=== CURRENT CAMPAIGN STATE ===\n${campaignKnowledgeText}`,
-  ].join('\n\n')
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 async function loadKnowledge(campaignId: string) {
@@ -259,8 +262,11 @@ export async function consultAdvisors(
                 `You are “${a.name}”, an advisor on a game master's advisory panel. ${a.persona}`,
                 `You cannot change the campaign yourself — give advice. Be concise (max ~180 words), concrete and actionable. Use bullet points. Reference entries with [[Name]]. Disagree when warranted.`,
                 languageRule(campaign),
+                gmPreferences('all'),
                 `=== CAMPAIGN ===\n${knowledge}`,
-              ].join('\n\n'),
+              ]
+                .filter(Boolean)
+                .join('\n\n'),
             },
             {
               role: 'user',

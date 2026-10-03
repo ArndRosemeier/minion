@@ -1,6 +1,39 @@
 import type { BattleMap, Campaign, Entity } from '@/types'
 import { SYSTEM_LABEL } from '@/types'
+import type { EntityType } from '@/types'
 import { ENTITY_TYPES } from '@/lib/entityTypes'
+import { getSettings } from '@/state/settings'
+
+/** Sections of the GM's preferences; each applies when the AI creates entries of its types. */
+export const PREF_SECTIONS: { id: string; label: string; hint: string; types: EntityType[] }[] = [
+  { id: 'story', label: 'Story, chapters & scenes', hint: 'Plot, pacing, tone, read-aloud style, how much railroading…', types: ['chapter', 'scene', 'handout', 'note'] },
+  { id: 'npcs', label: 'NPCs & factions', hint: 'Kinds of characters, names, voices, villains…', types: ['npc', 'faction'] },
+  { id: 'locations', label: 'Locations', hint: 'Settlements, places, level of detail…', types: ['location'] },
+  { id: 'dungeons', label: 'Dungeons', hint: 'Size, layout, traps, puzzles…', types: ['dungeon'] },
+  { id: 'encounters', label: 'Encounters & combat', hint: 'Difficulty, number of fights, enemy types, terrain…', types: ['encounter'] },
+  { id: 'creatures', label: 'Creatures & monsters', hint: 'Official vs. homebrew, themes, what to avoid…', types: ['creature'] },
+  { id: 'items', label: 'Items, spells & rules', hint: 'Treasure amount, magic items, house rules…', types: ['item', 'spell', 'rule'] },
+  { id: 'images', label: 'Images & battle maps', hint: 'Art direction, what pictures should or should not show…', types: [] },
+]
+
+/**
+ * The GM's standing preferences for a prompt: always the global part, plus the sections for the given
+ * entry types ('all' = every section) and optionally images. Empty string when nothing applies.
+ */
+export function gmPreferences(types: EntityType[] | 'all', images = false): string {
+  const p = getSettings().preferences
+  if (!p) return ''
+  const parts: string[] = []
+  if (p.global?.trim()) parts.push(p.global.trim())
+  for (const sec of PREF_SECTIONS) {
+    const text = p.sections?.[sec.id]?.trim()
+    if (!text) continue
+    const applies = types === 'all' ? sec.id !== 'images' || images : sec.id === 'images' ? images : sec.types.some((t) => types.includes(t))
+    if (applies) parts.push(`${sec.label}:\n${text}`)
+  }
+  if (!parts.length) return ''
+  return `GM'S PREFERENCES — the GM's standing wishes for everything you create. Always follow them; they take precedence over the general guidance above (but not over explicit instructions for this specific request):\n${parts.join('\n\n')}`
+}
 
 export const STATBLOCK_SCHEMA = `StatBlock = {
   level?: number            // PF2e creature level

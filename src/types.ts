@@ -422,4 +422,6 @@ export interface AppSettings {
   showAiActivity?: boolean
   /** recently used models, most recent first */
   recentModels?: { chat: string[]; image: string[] }
+  /** the GM's standing preferences for everything the AI creates: global + per section (see PREF_SECTIONS) */
+  preferences?: { global?: string; sections?: Record<string, string> }
 }

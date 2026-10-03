@@ -8,7 +8,7 @@ import { levelFor } from '@/lib/levels'
 import { getSettings } from '@/state/settings'
 import { chatJson } from './openrouter'
 import { generateBattlemapImage, illustrateEntity, sanitizeEntityData } from './generate'
-import { campaignHeader, entityIndexLine, LINK_RULES, languageRule } from './prompts'
+import { campaignHeader, entityIndexLine, gmPreferences, LINK_RULES, languageRule } from './prompts'
 import {
   computeDifficultyLabel,
   createMissingLinks,
@@ -160,6 +160,7 @@ AREAS (outline only — each area's full text is written afterwards):
     `DUNGEON TEXT: "body" (history, purpose, inhabitants and factions, how to enter, dungeon-wide features like light, sounds and wandering monsters, how areas connect), "secrets" (the big twist / GM info), "overview" (a concrete visual prompt for an image model painting the whole site top-down: materials, light, vegetation/water/debris, atmosphere; no text), "imagePrompt" (an evocative illustration of the place, no text).`,
     withRooms ? `AVAILABLE CREATURES (exact names):\n${await creatureCandidates(campaign, entities, level)}` : '',
     `Existing campaign entries (link to them where relevant):\n${entities.slice(0, 200).map(entityIndexLine).join('\n')}`,
+    gmPreferences(['dungeon', 'location', 'encounter', 'creature', 'item'], true),
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -202,7 +203,10 @@ async function writeRoom(
     LINK_RULES,
     `DUNGEON “${dungeon.name}”: ${dungeon.summary}\n${dungeon.body.slice(0, 2500)}`,
     `ALL AREAS (for consistency and exits):\n${outline}`,
-  ].join('\n\n')
+    gmPreferences(['dungeon', 'location', 'encounter', 'item'], true),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
   const user = [
     `Write area ${key} “${room.name}”: ${room.summary}`,
     enc && `It has the encounter “${enc.name}” with ${(enc.encounter?.creatures ?? []).map((c) => `${c.count}× [[${c.name}]]`).join(', ')}. ${enc.summary}`,

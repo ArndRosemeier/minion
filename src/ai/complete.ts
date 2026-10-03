@@ -12,7 +12,7 @@ import { levelFor } from '@/lib/levels'
 import { getSettings } from '@/state/settings'
 import { chatJson } from './openrouter'
 import { entitySubject, generateBattlemapImage, generateEntityData, illustrateEntity, sanitizeEntityData, writeImagePrompts } from './generate'
-import { campaignHeader, entityIndexLine, LINK_RULES, languageRule, STATBLOCK_SCHEMA } from './prompts'
+import { campaignHeader, entityIndexLine, gmPreferences, LINK_RULES, languageRule, STATBLOCK_SCHEMA } from './prompts'
 import type { Campaign, EncounterCreature, Entity, EntityType } from '@/types'
 import { SYSTEM_LABEL } from '@/types'
 
@@ -343,6 +343,7 @@ export async function completeEntity(
           wantEnc ? ENCOUNTER_RULES(campaign, level) : '',
           wantEnc ? `AVAILABLE CREATURES (exact names):\n${await creatureCandidates(campaign, entities0, level)}` : '',
           `Existing campaign entries (link to them where relevant):\n${entities0.slice(0, 300).map(entityIndexLine).join('\n')}`,
+          gmPreferences(wantEnc ? [type, 'creature'] : [type], true),
         ]
           .filter(Boolean)
           .join('\n\n')
