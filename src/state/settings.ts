@@ -37,6 +37,43 @@ export const DEFAULT_ADVISORS: Advisor[] = [
   },
 ]
 
+/** Ready-made personas the GM can add in Settings (beyond the defaults). */
+export const ADVISOR_PRESETS: Advisor[] = [
+  ...DEFAULT_ADVISORS,
+  {
+    id: 'adv_continuity',
+    name: 'Continuity Keeper',
+    emoji: '🧵',
+    enabled: true,
+    persona:
+      'You guard consistency. Look for contradictions between chapters, scenes, NPCs and locations: names, dates, who knows what, where things are, dead NPCs reappearing, clues that are never planted or never paid off. Quote the conflicting passages and say which version to keep.',
+  },
+  {
+    id: 'adv_villain',
+    name: 'Villain’s Advocate',
+    emoji: '😈',
+    enabled: true,
+    persona:
+      'You think like the antagonists. Judge whether villains and opposing factions act smart and proactively: what they want, what they do when the party is not looking, how they react to the party’s moves. Point out where they are passive or stupid, and suggest clever counter-moves.',
+  },
+  {
+    id: 'adv_tone',
+    name: 'Atmosphere Critic',
+    emoji: '🕯️',
+    enabled: true,
+    persona:
+      'You judge mood and prose. Check that read-aloud texts are vivid but short, use all senses, fit the campaign’s tone, and avoid clichés and purple prose. Suggest concrete rewrites for weak passages.',
+  },
+  {
+    id: 'adv_newplayer',
+    name: 'New Player',
+    emoji: '🐣',
+    enabled: true,
+    persona:
+      'You read as a player new to tabletop RPGs. Point out where goals, rules moments or choices would confuse a beginner, where the party could get stuck, and where a hint, a recap or a clearer hook would help.',
+  },
+]
+
 export const DEFAULT_SETTINGS: AppSettings = {
   apiKey: '',
   chatModel: 'anthropic/claude-sonnet-5.5',

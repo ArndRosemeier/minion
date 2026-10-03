@@ -362,6 +362,8 @@ export interface ChatMessage {
   viaTool?: boolean
   /** advisor display name */
   advisor?: string
+  /** advisor comment the GM passed on to the writer */
+  forwarded?: boolean
   model?: string
   toolCalls?: ToolCall[]
   toolCallId?: string

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { Link } from 'react-router'
 import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
   MessagesSquare,
   PanelLeft,
+  Pencil,
   Plus,
   Send,
   Square,
@@ -249,7 +251,16 @@ function ThreadView({ threadId, onToggleThreads }: { threadId: string; onToggleT
               placeholder="Ask, plan, create, change… (use [[Name]] to reference entries)"
               className="max-h-60 border-0 bg-transparent focus:ring-0"
             />
-            <IconButton label="Ask advisors" icon={<Users />} onClick={() => setAdvOpen(true)} disabled={!!run} />
+            <Button
+              size="sm"
+              icon={<Users className="size-4" />}
+              onClick={() => setAdvOpen(true)}
+              disabled={!!run}
+              title="Ask the advisors to read along and comment"
+              className="shrink-0 border-[#4a3d5c] bg-[#221d2a] text-[#cdb8f0] hover:bg-[#2c2536]"
+            >
+              Advisors
+            </Button>
             {run ? (
               <IconButton label="Stop" variant="danger" icon={<Square />} onClick={() => stop(threadId)} />
             ) : (
@@ -355,14 +366,57 @@ function ToolRow({ name, args, result }: { name: string; args: string; result?: 
   )
 }
 
+/** advisor comment as it reaches the writer */
+const forwardText = (advisor: string | undefined, text: string) => `[Advisor “${advisor}” comments — forwarded by the GM:]\n${text.trim()}`
+
 function AdvisorBubble({ m }: { m: ChatMessage }) {
+  const busy = useAgentRun((s) => !!s.runs[m.threadId])
+  const send = useAgentRun((s) => s.send)
+  const setDraft = useUI((s) => s.setChatDraft)
+  const [editing, setEditing] = useState<string | null>(null)
+  const canForward = !m.error && !!m.content && !m.viaTool
+
+  const forward = async (text: string) => {
+    await db.messages.update(m.id, { forwarded: true })
+    setEditing(null)
+    await send(m.campaignId, m.threadId, forwardText(m.advisor, text))
+  }
+
   return (
     <div className="rounded-2xl border border-[#4a3d5c] bg-[#221d2a] px-4 py-3">
       <div className="mb-1.5 flex items-center gap-2 text-sm font-semibold text-[#cdb8f0]">
         {m.advisor}
         <span className="text-[11px] font-normal text-faint">{m.model}</span>
+        <div className="flex-1" />
+        {m.forwarded && <span className="text-[11px] font-normal text-success">✓ sent to writer</span>}
       </div>
-      {m.error ? <div className="text-sm text-danger">{m.error}</div> : <Markdown text={m.content} className="text-[15px]" />}
+      {m.error ? (
+        <div className="text-sm text-danger">{m.error}</div>
+      ) : editing !== null ? (
+        <div className="space-y-2">
+          <Textarea minRows={4} value={editing} onChange={(e) => setEditing(e.target.value)} className="text-[15px]" autoFocus />
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button size="sm" variant="ghost" icon={<Plus className="size-4" />} disabled={!editing.trim()} onClick={() => (setDraft(forwardText(m.advisor, editing)), setEditing(null))}>
+              Add to my message
+            </Button>
+            <Button size="sm" variant="primary" icon={<Send className="size-4" />} disabled={!editing.trim() || busy} onClick={() => forward(editing)}>
+              Send to writer
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Markdown text={m.content} className="text-[15px]" />
+      )}
+      {canForward && editing === null && (
+        <div className="mt-2 flex justify-end border-t border-[#4a3d5c] pt-2">
+          <Button size="sm" variant="ghost" icon={<Pencil className="size-4" />} onClick={() => setEditing(m.content)}>
+            {m.forwarded ? 'Edit & send again' : 'Edit & send to writer'}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
@@ -458,7 +512,12 @@ function AdvisorModal({
             </div>
           ))}
         </div>
-        <p className="text-xs text-faint">Their answers appear in the chat, and the assistant sees them in the next message. Configure advisors in Settings.</p>
+        <p className="text-xs text-faint">
+          Advisors read the campaign and this conversation and comment — they never change anything. Their comments appear in the chat; the writer only sees what you edit and send on.{' '}
+          <Link to="/settings" className="text-accent underline">
+            Add or edit advisors
+          </Link>
+        </p>
       </div>
     </Modal>
   )

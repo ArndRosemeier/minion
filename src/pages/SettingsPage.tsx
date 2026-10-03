@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { ArrowLeft, CheckCircle2, Eye, EyeOff, Plus, RotateCcw, Trash2 } from 'lucide-react'
-import { DEFAULT_ADVISORS, useSettings } from '@/state/settings'
+import { ADVISOR_PRESETS, DEFAULT_ADVISORS, useSettings } from '@/state/settings'
 import { listModels } from '@/ai/openrouter'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Button, Card, Field, IconButton, Input, Segmented, Textarea, Toggle } from '@/components/ui'
@@ -18,6 +18,7 @@ export function SettingsPage() {
   const [storage, setStorage] = useState<{ usage: number; quota: number; persisted: boolean } | null>(null)
   const [credits, setCredits] = useState<CompendiumManifest[]>([])
   const prefs = settings.preferences ?? {}
+  const presets = ADVISOR_PRESETS.filter((p) => !settings.advisors.some((a) => a.id === p.id))
   // sections with text start expanded (only on first render, so clearing a box doesn't collapse it)
   const [openPrefs] = useState(() => new Set(PREF_SECTIONS.filter((x) => prefs.sections?.[x.id]?.trim()).map((x) => x.id)))
 
@@ -214,11 +215,28 @@ export function SettingsPage() {
               icon={<Plus className="size-4" />}
               onClick={() => update({ advisors: [...settings.advisors, { id: newId('adv'), name: 'New advisor', emoji: '🦉', persona: '', enabled: true }] })}
             >
-              Add
+              New
             </Button>
           </div>
         </div>
-        <p className="text-sm text-muted">Advisors give second opinions in the campaign chat. Each can use its own model.</p>
+        <p className="text-sm text-muted">
+          Advisors read the campaign and the chat and comment — they never change anything. Ask them with the “Advisors” button in the chat; you edit their comments before they go to the writer. Each can use its own model.
+        </p>
+        {presets.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-faint">Add a ready-made advisor:</span>
+            {presets.map((p) => (
+              <button
+                key={p.id}
+                title={p.persona}
+                onClick={() => update({ advisors: [...settings.advisors, p] })}
+                className="rounded-lg border border-line bg-surface-2 px-2.5 py-1 text-sm hover:border-accent/50"
+              >
+                + {p.emoji} {p.name}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="grid items-start gap-4 grid-cols-[repeat(auto-fill,minmax(min(420px,100%),1fr))]">
         {settings.advisors.map((a) => (
           <div key={a.id} className="space-y-3 rounded-xl border border-line bg-surface-2 p-4">

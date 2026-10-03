@@ -60,7 +60,9 @@ export function historyToMessages(history: ChatMessage[]): ORMessage[] {
     const old = i < lastUserIdx
     if (m.role === 'user') out.push({ role: 'user', content: m.content })
     else if (m.role === 'advisor') {
-      if (!m.viaTool && m.content) out.push({ role: 'user', content: `[Advisor “${m.advisor}” says:]\n${m.content}` })
+      // advisor comments reach the writer only when the GM forwards them (as a user message);
+      // ones the writer asked for itself are part of its tool result
+      return
     } else if (m.role === 'assistant') {
       if (!m.content && !m.toolCalls?.length) return
       out.push({
@@ -228,6 +230,30 @@ export function toolLabel(name: string, args: string): string {
 // Advisors
 // ---------------------------------------------------------------------------
 
+const ADVISOR_TOOLS = TOOLS.filter((t) => READ_TOOLS.has(t.function.name))
+const ADVISOR_MAX_STEPS = 6
+
+/** One advisor answer: may read entries and rules (never change anything) before commenting. */
+async function advisorChat(campaignId: string, model: string, label: string, signal: AbortSignal | undefined, messages: ORMessage[]) {
+  let cost = 0
+  for (let step = 0; ; step++) {
+    const last = step >= ADVISOR_MAX_STEPS - 1
+    const res = await chat({ label, model, signal, temperature: 0.7, messages, tools: last ? undefined : ADVISOR_TOOLS })
+    cost += res.cost ?? 0
+    if (last || !res.toolCalls.length) return { content: res.content, cost }
+    messages = [
+      ...messages,
+      { role: 'assistant', content: res.content || null, tool_calls: res.toolCalls.map((t) => ({ id: t.id, type: 'function' as const, function: { name: t.name, arguments: t.arguments } })) },
+    ]
+    for (const call of res.toolCalls) {
+      const content = READ_TOOLS.has(call.name)
+        ? await executeTool(call.name, call.arguments, { campaignId, ctx: { batchId: newId('b'), source: 'ai' }, signal }).catch((e) => JSON.stringify({ error: e?.message ?? String(e) }))
+        : JSON.stringify({ error: 'Advisors can only read.' })
+      messages = [...messages, { role: 'tool', tool_call_id: call.id, content }]
+    }
+  }
+}
+
 export async function consultAdvisors(
   campaignId: string,
   threadId: string,
@@ -250,30 +276,24 @@ export async function consultAdvisors(
   const results = await Promise.all(
     list.map(async (a) => {
       try {
-        const r = await chat({
-          label: `Advisor: ${a.name}`,
-          model: a.model || settings.fastModel,
-          signal,
-          temperature: 0.7,
-          messages: [
-            {
-              role: 'system',
-              content: [
-                `You are “${a.name}”, an advisor on a game master's advisory panel. ${a.persona}`,
-                `You cannot change the campaign yourself — give advice. Be concise (max ~180 words), concrete and actionable. Use bullet points. Reference entries with [[Name]]. Disagree when warranted.`,
-                languageRule(campaign),
-                gmPreferences('all'),
-                `=== CAMPAIGN ===\n${knowledge}`,
-              ]
-                .filter(Boolean)
-                .join('\n\n'),
-            },
-            {
-              role: 'user',
-              content: `Recent conversation:\n${convo || '(none)'}\n\n${question ? `Question for the panel: ${question}` : 'Give your opinion on the current state/plan.'}`,
-            },
-          ],
-        })
+        const r = await advisorChat(campaignId, a.model || settings.fastModel, `Advisor: ${a.name}`, signal, [
+          {
+            role: 'system',
+            content: [
+              `You are “${a.name}”, an advisor on a game master's advisory panel. ${a.persona}`,
+              `You cannot change the campaign yourself — you read and comment. The GM decides what to pass on to the story writer. Base your comments on the actual text: when the campaign below is only an index, read the entries you comment on with read_entities (and look up rules with search_rules/read_rule) before answering. Be concise (max ~180 words), concrete and actionable. Use bullet points. Reference entries with [[Name]]. Disagree when warranted.`,
+              languageRule(campaign),
+              gmPreferences('all'),
+              `=== CAMPAIGN ===\n${knowledge}`,
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
+          },
+          {
+            role: 'user',
+            content: `Recent conversation:\n${convo || '(none)'}\n\n${question ? `Question for the panel: ${question}` : 'Give your opinion on the current state/plan.'}`,
+          },
+        ])
         const m: ChatMessage = {
           id: newId('m'),
           campaignId,
