@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BookOpen, Copy, Eye, EyeOff, HeartPulse, ImagePlus, Minus, Plus, Shield, Swords, Trash2, X } from 'lucide-react'
+import { BookOpen, Copy, Expand, Eye, EyeOff, HeartPulse, ImagePlus, Minus, Plus, Shield, Swords, Trash2, X } from 'lucide-react'
 import { useCampaign } from '@/state/campaign'
 import { useUI, toast } from '@/state/ui'
 import { getRef } from '@/compendium/compendium'
@@ -10,6 +10,8 @@ import { resolveCreature } from '@/lib/creatures'
 import { applyHp, COMMON_CONDITIONS, VALUED_CONDITIONS_PF2E } from '@/lib/mapOps'
 import { newId } from '@/lib/id'
 import { ActionChips } from '@/components/StatBlockView'
+import { AssetImage } from '@/components/AssetImage'
+import { tokenArtId } from './MapCanvas'
 import { LinkChip } from '@/components/Markdown'
 import { Button, IconButton, Input, Modal, cx } from '@/components/ui'
 import type { MapState, Token } from '@/types'
@@ -25,6 +27,7 @@ export function TokenPanel({
 }) {
   const { campaign, index, compendiumVersion } = useCampaign()
   const openDetail = useUI((s) => s.openDetail)
+  const show = useUI((s) => s.show)
   const [amount, setAmount] = useState('')
   const [condOpen, setCondOpen] = useState(false)
   const [painting, setPainting] = useState(false)
@@ -37,6 +40,7 @@ export function TokenPanel({
   const t = tokens[0]
   const single = tokens.length === 1
   const creature = single && t.kind !== 'pc' && t.refId ? resolveCreature(t.refId, t.name.replace(/ \d+$/, ''), index, campaign.system) : null
+  const portrait = single ? tokenArtId(t, { campaign, index }) : undefined
 
   return (
     <div className="space-y-4">
@@ -50,6 +54,20 @@ export function TokenPanel({
         </div>
         <IconButton label="Deselect" icon={<X />} onClick={onDeselect} />
       </div>
+
+      {portrait && (
+        <button
+          className="group relative block w-full overflow-hidden rounded-xl border border-line bg-black"
+          title="Show to players (full screen)"
+          // players see the creature, not the GM's token numbering
+          onClick={() => show({ image: portrait, title: (creature?.name ?? t.name).replace(/ \d+$/, '') })}
+        >
+          <AssetImage id={portrait} className="max-h-64 w-full object-contain" />
+          <span className="absolute right-2 bottom-2 flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white opacity-80 backdrop-blur group-hover:opacity-100">
+            <Expand className="size-3.5" /> Show players
+          </span>
+        </button>
+      )}
 
       {single && (
         <div className="grid grid-cols-4 gap-2 text-center">
