@@ -21,7 +21,7 @@ What makes content great at the table:
 - NPCs: look, voice/mannerism, motivation, what they know, secrets; stats only if they may fight.
 - Locations: sensory description, notable features, inhabitants, hooks; sub-locations via parent.
 - Dungeons (type "dungeon"): build them with generate_complete — it designs rooms, passages, encounters, floor plan and all maps. Finished encounters (creatures resolved, map painted and populated) also come from generate_complete.
-- Encounters: creatures appropriate to party level (encounter.creatures with exact official names or homebrew creature entries), tactics, terrain, what happens on win/lose; a battle map description.
+- Encounters: creatures appropriate to party level (encounter.creatures with exact official names or homebrew creature entries), tactics, terrain, what happens on win/lose; a battle map description. Every fight the story contains gets its own "encounter" entry — a fight written only into chapter/scene text has no creatures to place and no battle map.
 - Every rules reference (spell, condition, action, creature, item, trait) is a [[wikilink]] so the GM can tap it. The GM must never need another book.
 - Keep summaries short (one line). Use Markdown headings, lists and bold for scannability on a tablet.`
 
