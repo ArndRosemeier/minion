@@ -90,12 +90,14 @@ function Header({ icon: Icon, color, label, title, sub }: { icon: any; color: st
 }
 
 function EntityDetail({ entity: e }: { entity: Entity }) {
-  const { campaign, entities } = useCampaign()
+  const { campaign, entities, maps } = useCampaign()
   const show = useUI((s) => s.show)
   const closeDetail = useUI((s) => s.closeDetail)
   const openEditor = useEditor((s) => s.open)
   const spawn = useBattle((s) => s.requestSpawn)
   const activeMap = useBattle((s) => s.activeMapId)
+  const openMap = useBattle((s) => s.openMap)
+  const encounterMap = e.encounter?.mapId ? maps.find((m) => m.id === e.encounter!.mapId) : undefined
   const [busy, setBusy] = useState(false)
   const [img, setImg] = useState(0)
   const [showSecrets, setShowSecrets] = useState(false)
@@ -136,6 +138,12 @@ function EntityDetail({ entity: e }: { entity: Entity }) {
         sub={e.summary}
       />
       {e.aliases.length > 0 && <div className="-mt-3 text-xs text-faint">Also: {e.aliases.join(', ')}</div>}
+
+      {encounterMap && (
+        <Button variant="primary" className="w-full" icon={<Swords className="size-4" />} onClick={() => openMap(encounterMap.id)}>
+          Open battle map “{encounterMap.name}”
+        </Button>
+      )}
 
       {e.images.length > 0 && (
         <div className="space-y-2">
@@ -285,9 +293,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function EncounterBlock({ entity: e }: { entity: Entity }) {
-  const { maps, index, campaign } = useCampaign()
-  const map = e.encounter?.mapId ? maps.find((m) => m.id === e.encounter!.mapId) : undefined
-  const openMap = useBattle((s) => s.openMap)
+  const { index, campaign } = useCampaign()
   return (
     <div className="space-y-3 rounded-xl border border-line bg-surface-2 p-4">
       <div className="flex items-center justify-between">
@@ -305,11 +311,6 @@ function EncounterBlock({ entity: e }: { entity: Entity }) {
         ))}
       </div>
       {e.encounter?.tactics && <Markdown text={`**Tactics:** ${e.encounter.tactics}`} className="text-sm" />}
-      {map && (
-        <Button size="sm" variant="primary" icon={<Swords className="size-4" />} onClick={() => openMap(map.id)}>
-          Open battle map “{map.name}”
-        </Button>
-      )}
     </div>
   )
 }
