@@ -103,20 +103,36 @@ export function targetOf(r: Resolved, system: GameSystem): LinkTarget {
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** Build a regex matching any campaign entity name/alias for auto-linking. */
-export function buildAutoLinkRegex(entities: Entity[]): RegExp | null {
+/** Entry types written in lowercase in prose ("the goblin", "a longsword"); everything else is a proper name. */
+const COMMON_NOUN_TYPES = new Set<EntityType>(['creature', 'item', 'spell'])
+
+export interface AutoLinker {
+  /** matches any campaign entity name/alias, case-insensitively */
+  re: RegExp
+  /** lowercased names that only link when the text capitalizes them (so the NPC "Will" doesn't link every "will") */
+  strict: Set<string>
+}
+
+/** Build the matcher for auto-linking campaign entity names/aliases in text. */
+export function buildAutoLinker(entities: Entity[]): AutoLinker | null {
   const names = new Set<string>()
+  const loose = new Set<string>()
   for (const e of entities) {
     if (e.type === 'note') continue
-    for (const n of [e.name, ...(e.aliases || [])]) if (n && n.trim().length >= 3) names.add(n.trim())
+    for (const n of [e.name, ...(e.aliases || [])]) {
+      if (!n || n.trim().length < 3) continue
+      names.add(n.trim())
+      if (COMMON_NOUN_TYPES.has(e.type)) loose.add(n.trim().toLowerCase())
+    }
   }
   if (!names.size) return null
   const alt = [...names]
     .sort((a, b) => b.length - a.length)
     .map(escapeRe)
     .join('|')
+  const strict = new Set([...names].map((n) => n.toLowerCase()).filter((n) => !loose.has(n)))
   try {
-    return new RegExp(`(?<![\\p{L}\\p{N}])(${alt})(?![\\p{L}\\p{N}])`, 'giu')
+    return { re: new RegExp(`(?<![\\p{L}\\p{N}])(${alt})(?![\\p{L}\\p{N}])`, 'giu'), strict }
   } catch {
     return null
   }

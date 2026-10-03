@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { loadCompendium, onCompendiumLoaded } from '@/compendium/compendium'
-import { buildAutoLinkRegex, EntityIndex } from '@/lib/links'
+import { buildAutoLinker, EntityIndex, type AutoLinker } from '@/lib/links'
 import type { BattleMap, Campaign, Entity } from '@/types'
 
 export interface CampaignCtx {
@@ -10,7 +10,7 @@ export interface CampaignCtx {
   entities: Entity[]
   index: EntityIndex
   maps: BattleMap[]
-  autoLinkRe: RegExp | null
+  autoLinker: AutoLinker | null
   /** bumps when the compendium finished loading so link chips re-resolve */
   compendiumVersion: number
 }
@@ -35,7 +35,7 @@ export function CampaignProvider({ campaignId, children, fallback }: { campaignI
       entities,
       maps,
       index: new EntityIndex(entities),
-      autoLinkRe: buildAutoLinkRegex(entities),
+      autoLinker: buildAutoLinker(entities),
       compendiumVersion,
     }
   }, [campaign, entities, maps, compendiumVersion])

@@ -3,7 +3,7 @@ import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useOptionalCampaign } from '@/state/campaign'
 import { useSettings } from '@/state/settings'
-import { preprocessWikilinks, resolveLink, targetOf, type Resolved } from '@/lib/links'
+import { preprocessWikilinks, resolveLink, targetOf, type AutoLinker, type Resolved } from '@/lib/links'
 import { ENTITY_TYPES, REF_TYPES, UNRESOLVED_META } from '@/lib/entityTypes'
 import { useUI } from '@/state/ui'
 import { cx } from './ui'
@@ -14,9 +14,9 @@ const SKIP = new Set(['link', 'linkReference', 'inlineCode', 'code', 'heading', 
 const BLOCK = new Set(['paragraph', 'listItem', 'tableCell', 'blockquote'])
 
 /** remark plugin: turn plain-text mentions of campaign entities into wiki links (first mention per block). */
-function remarkAutoLink(re: RegExp | null, skipName: (name: string) => boolean) {
+function remarkAutoLink(linker: AutoLinker, skipName: (name: string) => boolean) {
+  const { re, strict } = linker
   return () => (tree: any) => {
-    if (!re) return
     const walk = (node: any, used: Set<string>) => {
       if (SKIP.has(node.type) || !node.children) return
       const scope = BLOCK.has(node.type) ? new Set<string>() : used
@@ -35,6 +35,8 @@ function remarkAutoLink(re: RegExp | null, skipName: (name: string) => boolean) 
           const name = m[1]
           const key = name.toLowerCase()
           if (scope.has(key) || skipName(name)) continue
+          // proper names only link when capitalized in the text
+          if (strict.has(key) && name[0] === name[0].toLowerCase() && name[0] !== name[0].toUpperCase()) continue
           scope.add(key)
           if (m.index > last) out.push({ type: 'text', value: value.slice(last, m.index) })
           out.push({ type: 'link', url: `wiki:${encodeURIComponent(name)}`, children: [{ type: 'text', value: name }] })
@@ -107,12 +109,12 @@ export const Markdown = memo(function Markdown({
   const source = useMemo(() => preprocessWikilinks(text || ''), [text])
   const plugins = useMemo(() => {
     const p: any[] = [remarkGfm]
-    if (autoLinkOn && ctx?.autoLinkRe) {
+    if (autoLinkOn && ctx?.autoLinker) {
       const self = selfName?.toLowerCase()
-      p.push(remarkAutoLink(ctx.autoLinkRe, (n) => n.toLowerCase() === self))
+      p.push(remarkAutoLink(ctx.autoLinker, (n) => n.toLowerCase() === self))
     }
     return p
-  }, [autoLinkOn, ctx?.autoLinkRe, selfName])
+  }, [autoLinkOn, ctx?.autoLinker, selfName])
 
   return (
     <div className={cx('prose-m', className)}>
