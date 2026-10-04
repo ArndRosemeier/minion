@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Eraser,
   MessagesSquare,
   PanelLeft,
   Pencil,
@@ -148,6 +149,7 @@ function ThreadView({ threadId, onToggleThreads }: { threadId: string; onToggleT
   const setDraft = useUI((s) => s.setChatDraft)
   const [text, setText] = useState('')
   const [advOpen, setAdvOpen] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const showThinking = useSettings((s) => s.settings.showAiActivity !== false)
@@ -192,7 +194,17 @@ function ThreadView({ threadId, onToggleThreads }: { threadId: string; onToggleT
             {cost > 0 && ` · $${cost.toFixed(3)} this chat`}
           </div>
         </div>
+        {!!messages?.length && <IconButton label="Clear chat" icon={<Eraser />} onClick={() => setConfirmClear(true)} disabled={!!run} />}
       </div>
+      <ConfirmModal
+        open={confirmClear}
+        onClose={() => setConfirmClear(false)}
+        title="Clear this chat?"
+        text="All messages in this chat are removed and the AI starts fresh. Campaign content and its undo history stay."
+        danger
+        confirmLabel="Clear"
+        onConfirm={() => db.messages.where('threadId').equals(threadId).delete()}
+      />
 
       <div
         ref={scroller}
