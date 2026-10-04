@@ -4,7 +4,7 @@ import { useCampaign } from '@/state/campaign'
 import { useUI } from '@/state/ui'
 import { compendium, searchRefs } from '@/compendium/compendium'
 import { REF_TYPES } from '@/lib/entityTypes'
-import { Empty, Input, Segmented, Spinner } from '@/components/ui'
+import { Empty, Input, Segmented, Spinner, Toggle } from '@/components/ui'
 import type { RefCategory, RefEntry } from '@/types'
 
 const LIMIT = 1000
@@ -38,6 +38,7 @@ export function RulesPage() {
   const [cat, setCat] = useState<RefCategory | 'all'>('condition')
   // null = default for the category: by level where entries have levels (spells, items, creatures…)
   const [sortPick, setSortPick] = useState<'name' | 'level' | null>(null)
+  const [inText, setInText] = useState(false)
   const c = compendium(campaign.system)
   const cats = useMemo(() => {
     const set = new Set(c?.entries.map((e) => e.category))
@@ -52,7 +53,7 @@ export function RulesPage() {
   const sortBy = hasLevels ? (sortPick ?? 'level') : 'name'
   const results = useMemo(
     () => {
-      const found = searchRefs(campaign.system, q, { category: cat === 'all' ? undefined : cat, limit: sortBy === 'level' ? Infinity : LIMIT })
+      const found = searchRefs(campaign.system, q, { category: cat === 'all' ? undefined : cat, limit: sortBy === 'level' ? Infinity : LIMIT, inText })
       if (sortBy !== 'level') return found
       // level order, entries without a level last; search relevance only breaks ties
       const rank = new Map(found.map((e, i) => [e.id, i]))
@@ -61,7 +62,7 @@ export function RulesPage() {
         .slice(0, LIMIT)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [q, cat, sortBy, campaign.system, compendiumVersion],
+    [q, cat, sortBy, inText, campaign.system, compendiumVersion],
   )
 
   return (
@@ -71,6 +72,7 @@ export function RulesPage() {
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint" />
           <Input className="pl-9" placeholder="Search the rules reference…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+        <Toggle checked={inText} onChange={setInText} label="Also search descriptions" />
         <div className="overflow-x-auto">
           <Segmented
             size="sm"

@@ -94,10 +94,18 @@ export function getRef(system: GameSystem, id: string): RefEntry | null {
   return ready.get(system)?.byId.get(id) ?? null
 }
 
+// normalized description text, built on first full-text search
+const normText = new WeakMap<RefEntry, string>()
+const textOf = (e: RefEntry) => {
+  let t = normText.get(e)
+  if (t === undefined) normText.set(e, (t = normalizeName(`${e.summary ?? ''} ${e.text} ${Object.values(e.meta ?? {}).join(' ')}`)))
+  return t
+}
+
 export function searchRefs(
   system: GameSystem,
   query: string,
-  opts: { category?: RefCategory; limit?: number; maxLevel?: number } = {},
+  opts: { category?: RefCategory; limit?: number; maxLevel?: number; inText?: boolean } = {},
 ): RefEntry[] {
   const c = ready.get(system)
   if (!c) return []
@@ -115,6 +123,7 @@ export function searchRefs(
     else if (n.includes(q)) s = 40
     else if (e.traits?.some((t) => t === q)) s = 20
     else if (q.length > 3 && e.summary && normalizeName(e.summary).includes(q)) s = 10
+    else if (opts.inText && q.length > 2 && textOf(e).includes(q)) s = 5
     if (s > 0) scored.push({ e, s })
   }
   scored.sort((a, b) => b.s - a.s || a.e.name.localeCompare(b.e.name))
